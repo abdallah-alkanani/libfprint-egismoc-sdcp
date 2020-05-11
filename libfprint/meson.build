@@ -158,6 +158,8 @@ driver_sources = {
 }
 
 helper_sources = {
+    'sdcp' :
+        [ 'fp-sdcp-device.c', 'fpi-sdcp-device.c' ],
     'aeslib' :
         [ 'drivers/aeslib.c' ],
     'aesx660' :

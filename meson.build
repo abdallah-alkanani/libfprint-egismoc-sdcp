@@ -274,6 +274,13 @@ foreach i : driver_helpers
         endif
 
         optional_deps += openssl_dep
+    elif i == 'sdcp'
+        openssl_dep = dependency('openssl', version: '>= 3.0.8', required: false)
+        if not openssl_dep.found()
+            error('OpenSSL >= 3.0.8 is required for SDCP support (@0@ and possibly others)'.format(driver))
+        endif
+
+        optional_deps += openssl_dep
     elif i == 'udev'
         install_udev_rules = true
 
