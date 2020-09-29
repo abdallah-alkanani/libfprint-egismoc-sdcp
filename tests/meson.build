@@ -14,6 +14,9 @@ envs.prepend('LD_LIBRARY_PATH', meson.project_build_root() / 'libfprint')
 # random numbers rather than proper ones)
 envs.set('FP_DEVICE_EMULATION', '1')
 
+# Path to SDCP virtual device binary, only used for virtual-sdcp test
+envs.set('SDCP_VIRT_BINARY', get_option('sdcp_virt_binary'))
+
 # Set a colon-separated list of native drivers we enable in tests
 envs.set('FP_DRIVERS_ALLOWLIST', ':'.join([
     'virtual_image',
