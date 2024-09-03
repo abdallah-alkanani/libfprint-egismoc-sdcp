@@ -1,5 +1,5 @@
 project('libfprint', [ 'c', 'cpp' ],
-    version: '1.94.7+tod1',
+    version: '1.94.8+tod1',
     license: 'LGPLv2.1+',
     default_options: [
         'buildtype=debugoptimized',
@@ -97,6 +97,9 @@ cairo_dep = dependency('cairo', required: false)
 # introspection scanning and Gio-2.0.gir
 gobject_introspection = dependency('gobject-introspection-1.0', required: get_option('introspection'))
 
+# SPI
+have_spi = host_machine.system() == 'linux'
+
 # Drivers
 drivers = get_option('drivers').split(',')
 virtual_drivers = [
@@ -135,10 +138,15 @@ default_drivers = [
     'fpcmoc',
     'realtek',
     'focaltech_moc',
-
-    # SPI
-    'elanspi',
 ]
+
+spi_drivers = [
+    'elanspi'
+]
+
+if have_spi
+    default_drivers += spi_drivers
+endif
 
 # FIXME: All the drivers should be fixed by adjusting the byte order.
 # See https://gitlab.freedesktop.org/libfprint/libfprint/-/issues/236
@@ -174,6 +182,17 @@ endif
 
 if drivers == [ 'default' ]
     drivers = default_drivers
+endif
+
+enabled_spi_drivers = []
+foreach driver : spi_drivers
+    if driver in drivers
+        enabled_spi_drivers += driver
+    endif
+endforeach
+
+if enabled_spi_drivers.length() > 0 and not have_spi
+    error('SPI drivers @0@ are not supported'.format(enabled_spi_drivers))
 endif
 
 driver_helper_mapping = {

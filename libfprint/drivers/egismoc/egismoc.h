@@ -36,6 +36,7 @@ G_DECLARE_FINAL_TYPE (FpiDeviceEgisMoc, fpi_device_egismoc, FPI, DEVICE_EGISMOC,
 
 #define EGISMOC_DRIVER_CHECK_PREFIX_TYPE1 (1 << 0)
 #define EGISMOC_DRIVER_CHECK_PREFIX_TYPE2 (1 << 1)
+#define EGISMOC_DRIVER_MAX_ENROLL_STAGES_20 (1 << 2)
 
 #define EGISMOC_EP_CMD_OUT (0x02 | FPI_USB_ENDPOINT_OUT)
 #define EGISMOC_EP_CMD_IN (0x81 | FPI_USB_ENDPOINT_IN)
@@ -49,7 +50,7 @@ G_DECLARE_FINAL_TYPE (FpiDeviceEgisMoc, fpi_device_egismoc, FPI, DEVICE_EGISMOC,
 #define EGISMOC_USB_IN_RECV_LENGTH 4096
 #define EGISMOC_USB_INTERRUPT_IN_RECV_LENGTH 64
 
-#define EGISMOC_ENROLL_TIMES 10
+#define EGISMOC_MAX_ENROLL_STAGES_DEFAULT 10
 #define EGISMOC_MAX_ENROLL_NUM 10
 #define EGISMOC_FINGERPRINT_DATA_SIZE 32
 #define EGISMOC_LIST_RESPONSE_PREFIX_SIZE 14
@@ -100,11 +101,11 @@ static guchar cmd_read_capture[] = {0x00, 0x00, 0x00, 0x07, 0x50, 0x16, 0x02, 0x
 static gsize cmd_read_capture_len = sizeof (cmd_read_capture) / sizeof (cmd_read_capture[0]);
 static guchar rsp_read_success_prefix[] = {0x00, 0x00, 0x00, 0x04};
 static gsize rsp_read_success_prefix_len = sizeof (rsp_read_success_prefix) / sizeof (rsp_read_success_prefix[0]);
-static guchar rsp_read_success_suffix[] = {0x0a, 0x90, 0x00};
+static guchar rsp_read_success_suffix[] = {0x90, 0x00};
 static gsize rsp_read_success_suffix_len = sizeof (rsp_read_success_suffix) / sizeof (rsp_read_success_suffix[0]);
 static guchar rsp_read_offcenter_prefix[] = {0x00, 0x00, 0x00, 0x04};
 static gsize rsp_read_offcenter_prefix_len = sizeof (rsp_read_offcenter_prefix) / sizeof (rsp_read_offcenter_prefix[0]);
-static guchar rsp_read_offcenter_suffix[] = {0x0a, 0x64, 0x91};
+static guchar rsp_read_offcenter_suffix[] = {0x64, 0x91};
 static gsize rsp_read_offcenter_suffix_len = sizeof (rsp_read_offcenter_suffix) / sizeof (rsp_read_offcenter_suffix[0]);
 static guchar rsp_read_dirty_prefix[] = {0x00, 0x00, 0x00, 0x02, 0x64};
 static gsize rsp_read_dirty_prefix_len = sizeof (rsp_read_dirty_prefix) / sizeof (rsp_read_dirty_prefix[0]);

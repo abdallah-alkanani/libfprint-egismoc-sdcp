@@ -292,14 +292,14 @@ fp_device_get_property (GObject    *object,
 
     case PROP_FPI_UDEV_DATA_SPIDEV:
       if (cls->type == FP_DEVICE_TYPE_UDEV)
-        g_value_set_string (value, g_strdup (priv->udev_data.spidev_path));
+        g_value_set_string (value, priv->udev_data.spidev_path);
       else
         g_value_set_string (value, NULL);
       break;
 
     case PROP_FPI_UDEV_DATA_HIDRAW:
       if (cls->type == FP_DEVICE_TYPE_UDEV)
-        g_value_set_string (value, g_strdup (priv->udev_data.hidraw_path));
+        g_value_set_string (value, priv->udev_data.hidraw_path);
       else
         g_value_set_string (value, NULL);
       break;

@@ -1,6 +1,20 @@
 This file lists notable changes in each release. For the full history of all
 changes, see ChangeLog.
 
+2024-09-03: v1.94.8 release
+
+Highlights:
+ * build: Support building in non-linux unix environments (tested in FreeBSD)
+ * egismoc: New PIDs 0x0583, 0x0586, 0x0587.
+ * elanmoc: New PID 0x0C9F.
+ * fpcmoc: New PIDs 0x9524, 0x9544.
+ * goodixmoc: New PIDs 0x609A, 0x650A, 0x650C, 0x6512.
+ * realtek: New PID 0x5816.
+ * synaptics: New PIDs 0x00C4, 0x019D, 0x00C6.
+ * fpcmoc: fix incorrect immobile handling during enrollment.
+ * fpcmoc: fixed jumping to wrong state at end of custom enroll.
+ * egismoc: various code cleanups.
+
 2024-02-20: v1.94.7 release
 
 Highlights:

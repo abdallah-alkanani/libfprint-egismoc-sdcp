@@ -28,6 +28,7 @@ G_DEFINE_TYPE (FpiDeviceRealtek, fpi_device_realtek, FP_TYPE_DEVICE)
 
 static const FpIdEntry id_table[] = {
   { .vid = 0x0bda,  .pid = 0x5813,  },
+  { .vid = 0x0bda,  .pid = 0x5816,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 
@@ -93,6 +94,50 @@ fp_task_ssm_generic_cb (FpiDeviceRealtek *self,
 }
 
 static void
+fp_get_device_info_cb (FpiDeviceRealtek *self,
+                       uint8_t          *buffer_in,
+                       GError           *error)
+{
+  if (error)
+    {
+      fpi_ssm_mark_failed (self->task_ssm, error);
+      return;
+    }
+
+  self->template_len = TEMPLATE_LEN_COMMON;
+
+  fpi_ssm_next_state (self->task_ssm);
+}
+
+static void
+fp_update_template_cb (FpiDeviceRealtek *self,
+                       uint8_t          *buffer_in,
+                       GError           *error)
+{
+  if (error)
+    {
+      fpi_ssm_mark_failed (self->task_ssm, error);
+      return;
+    }
+
+  fpi_ssm_jump_to_state (self->task_ssm, FP_RTK_VERIFY_NUM_STATES);
+}
+
+static void
+fp_enroll_commit_cb (FpiDeviceRealtek *self,
+                     uint8_t          *buffer_in,
+                     GError           *error)
+{
+  if (error)
+    {
+      fpi_ssm_mark_failed (self->task_ssm, error);
+      return;
+    }
+
+  fpi_ssm_jump_to_state (self->task_ssm, FP_RTK_ENROLL_NUM_STATES);
+}
+
+static void
 fp_finish_capture_cb (FpiDeviceRealtek *self,
                       uint8_t          *buffer_in,
                       GError           *error)
@@ -103,8 +148,17 @@ fp_finish_capture_cb (FpiDeviceRealtek *self,
       return;
     }
 
-  gint capture_status = buffer_in[0];
+  /* We hope this polling CMD can be completed before the action is cancelled */
+  GCancellable *cancellable = fpi_device_get_cancellable (FP_DEVICE (self));
+  if (g_cancellable_is_cancelled (cancellable))
+    {
+      fpi_ssm_mark_failed (self->task_ssm,
+                           fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                     "Action is cancelled!"));
+      return;
+    }
 
+  gint capture_status = buffer_in[0];
   if (capture_status == 0)
     {
       fpi_device_report_finger_status_changes (FP_DEVICE (self),
@@ -238,7 +292,6 @@ fp_identify_feature_cb (FpiDeviceRealtek *self,
     }
 
   gint in_status = buffer_in[0];
-
   if (in_status == FP_RTK_CMD_ERR)
     {
       fpi_ssm_mark_failed (self->task_ssm,
@@ -291,7 +344,7 @@ fp_identify_feature_cb (FpiDeviceRealtek *self,
           else
             {
               fpi_device_identify_report (device, print, match, error);
-              fpi_ssm_mark_completed (self->task_ssm);
+              fpi_ssm_jump_to_state (self->task_ssm, FP_RTK_VERIFY_NUM_STATES);
             }
           return;
         }
@@ -340,9 +393,9 @@ fp_get_delete_pos_cb (FpiDeviceRealtek *self,
 
   for (gint i = 0; i < self->template_num; i++)
     {
-      if (buffer_in[i * TEMPLATE_LEN] != 0)
+      if (buffer_in[i * self->template_len] != 0)
         {
-          memcpy (temp_userid, buffer_in + i * TEMPLATE_LEN + UID_OFFSET, DEFAULT_UID_LEN);
+          memcpy (temp_userid, buffer_in + i * self->template_len + UID_OFFSET, DEFAULT_UID_LEN);
           if (g_strcmp0 (fp_print_get_description (print), (const char *) temp_userid) == 0)
             {
               self->pos_index = i;
@@ -380,10 +433,25 @@ fp_get_enroll_num_cb (FpiDeviceRealtek *self,
 }
 
 static void
-fp_get_template_cb (FpiDeviceRealtek *self,
-                    uint8_t          *buffer_in,
-                    GError           *error)
+fp_verify_get_template_cb (FpiDeviceRealtek *self,
+                           uint8_t          *buffer_in,
+                           GError           *error)
 {
+  if (error)
+    {
+      fpi_ssm_mark_failed (self->task_ssm, error);
+      return;
+    }
+
+  fpi_ssm_next_state (self->task_ssm);
+}
+
+static void
+fp_enroll_get_template_cb (FpiDeviceRealtek *self,
+                           uint8_t          *buffer_in,
+                           GError           *error)
+{
+  g_autofree guchar *seq_list = NULL;
   gboolean found = FALSE;
 
   if (error)
@@ -394,7 +462,7 @@ fp_get_template_cb (FpiDeviceRealtek *self,
 
   for (gint i = 0; i < self->template_num; i++)
     {
-      if (buffer_in[i * TEMPLATE_LEN] == 0)
+      if (buffer_in[i * self->template_len] == 0)
         {
           self->pos_index = i;
           found = TRUE;
@@ -425,7 +493,6 @@ fp_check_duplicate_cb (FpiDeviceRealtek *self,
     }
 
   gint in_status = buffer_in[0];
-
   if (in_status == FP_RTK_CMD_ERR)
     {
       fpi_ssm_mark_failed (self->task_ssm,
@@ -471,10 +538,10 @@ fp_list_cb (FpiDeviceRealtek *self,
 
   for (gint i = 0; i < self->template_num; i++)
     {
-      if (buffer_in[i * TEMPLATE_LEN] != 0)
+      if (buffer_in[i * self->template_len] != 0)
         {
           FpPrint *print = NULL;
-          print = fp_print_from_data (self, buffer_in + i * TEMPLATE_LEN + SUBFACTOR_OFFSET);
+          print = fp_print_from_data (self, buffer_in + i * self->template_len + SUBFACTOR_OFFSET);
           g_ptr_array_add (list_result, g_object_ref_sink (print));
           found = TRUE;
         }
@@ -518,11 +585,11 @@ parse_status (guint8 *buffer, gint status_type)
 {
   switch (status_type)
     {
-    case FP_RTK_MSG_PLAINTEXT_NO_STATUS:
+    case FP_RTK_MSG_NO_STATUS:
       return 0;
       break;
 
-    case FP_RTK_MSG_PLAINTEXT:
+    case FP_RTK_MSG_DEFAULT:
       return buffer[0];
       break;
 
@@ -621,13 +688,13 @@ fp_cmd_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case FP_RTK_CMD_TRANS_DATA:
-      if (self->cmd_type == FP_RTK_CMD_ONLY)
+      if (self->cmd_type == FP_RTK_CMD_BULK_ONLY)
         {
           fpi_ssm_jump_to_state (ssm, FP_RTK_CMD_GET_STATUS);
           break;
         }
 
-      if (self->cmd_type == FP_RTK_CMD_WRITE)
+      if (self->cmd_type == FP_RTK_CMD_BULK_WRITE)
         {
           if (self->data_transfer)
             {
@@ -688,10 +755,10 @@ fp_cmd_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 }
 
 static FpiUsbTransfer *
-prepare_transfer (FpDevice      *dev,
-                  guint8        *data,
-                  gsize          data_len,
-                  GDestroyNotify free_func)
+prepare_bulk_transfer (FpDevice      *dev,
+                       guint8        *data,
+                       gsize          data_len,
+                       GDestroyNotify free_func)
 {
   g_autoptr(FpiUsbTransfer) transfer = NULL;
 
@@ -708,29 +775,100 @@ prepare_transfer (FpDevice      *dev,
   return g_steal_pointer (&transfer);
 }
 
+
 static void
-realtek_sensor_cmd (FpiDeviceRealtek *self,
-                    guint8           *cmd,
-                    guint8           *trans_data,
-                    FpRtkMsgType      message_type,
-                    gboolean          bwait_data_delay,
-                    SynCmdMsgCallback callback)
+fp_ctrl_cmd_cb (FpiUsbTransfer *transfer,
+                FpDevice       *device,
+                gpointer        user_data,
+                GError         *error)
+{
+  FpiDeviceRealtek *self = FPI_DEVICE_REALTEK (device);
+  g_autofree CommandData *data = g_steal_pointer (&user_data);
+
+  g_return_if_fail (data != NULL);
+
+  if (error)
+    {
+      fpi_ssm_mark_failed (transfer->ssm, error);
+      return;
+    }
+
+  if (transfer->direction == G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE)
+    {
+      if (data->callback)
+        data->callback (self, NULL, NULL);
+    }
+  else
+    {
+      if (transfer->actual_length == 0)
+        {
+          fp_info ("Control transfer receive data failed!");
+          fpi_ssm_mark_failed (transfer->ssm,
+                               fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
+          return;
+        }
+
+      if (data->callback)
+        data->callback (self, transfer->buffer, NULL);
+    }
+}
+
+static void
+rtk_send_ctrl_cmd (FpiDeviceRealtek    *self,
+                   struct rtk_cmd_ctrl *ctrl_cmd,
+                   guint8              *cmd_data,
+                   SynCmdMsgCallback    callback)
+{
+  FpiUsbTransfer *transfer = NULL;
+  g_autofree CommandData *data = g_new0 (CommandData, 1);
+
+  data->callback = callback;
+
+  transfer = fpi_usb_transfer_new (FP_DEVICE (self));
+  fpi_usb_transfer_fill_control (transfer,
+                                 ctrl_cmd->direction,
+                                 G_USB_DEVICE_REQUEST_TYPE_VENDOR,
+                                 G_USB_DEVICE_RECIPIENT_DEVICE,
+                                 ctrl_cmd->request,
+                                 ctrl_cmd->value,
+                                 ctrl_cmd->index,
+                                 ctrl_cmd->len);
+
+  transfer->ssm = self->task_ssm;
+  if (ctrl_cmd->direction == G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST &&
+      cmd_data != NULL && ctrl_cmd->len != 0)
+    memcpy (transfer->buffer, cmd_data, ctrl_cmd->len);
+
+  fpi_usb_transfer_submit (transfer,
+                           CMD_TIMEOUT,
+                           NULL,
+                           fp_ctrl_cmd_cb,
+                           g_steal_pointer (&data));
+}
+
+static void
+rtk_sensor_bulk_cmd (FpiDeviceRealtek *self,
+                     guint8           *cmd,
+                     guint8           *trans_data,
+                     FpRtkMsgType      message_type,
+                     gboolean          bwait_data_delay,
+                     SynCmdMsgCallback callback)
 {
   g_autoptr(FpiUsbTransfer) cmd_transfer = NULL;
   g_autoptr(FpiUsbTransfer) data_transfer = NULL;
   CommandData *data = g_new0 (CommandData, 1);
 
-  self->cmd_type = GET_CMD_TYPE (cmd[0]);
+  self->cmd_type = GET_BULK_CMD_TYPE (cmd[0]);
   self->message_type = message_type;
   self->trans_data_len = GET_TRANS_DATA_LEN (cmd[11], cmd[10]);
   self->cmd_cancellable = bwait_data_delay;
 
-  cmd_transfer = prepare_transfer (FP_DEVICE (self), cmd, FP_RTK_CMD_TOTAL_LEN, NULL);
+  cmd_transfer = prepare_bulk_transfer (FP_DEVICE (self), cmd, FP_RTK_CMD_BULK_TOTAL_LEN, NULL);
   self->cmd_transfer = g_steal_pointer (&cmd_transfer);
 
-  if ((self->cmd_type == FP_RTK_CMD_WRITE) && trans_data)
+  if ((self->cmd_type == FP_RTK_CMD_BULK_WRITE) && trans_data)
     {
-      data_transfer = prepare_transfer (FP_DEVICE (self), trans_data, self->trans_data_len, g_free);
+      data_transfer = prepare_bulk_transfer (FP_DEVICE (self), trans_data, self->trans_data_len, g_free);
       self->data_transfer = g_steal_pointer (&data_transfer);
     }
 
@@ -829,34 +967,49 @@ fp_verify_sm_run_state (FpiSsm *ssm, FpDevice *device)
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
+    case FP_RTK_VERIFY_GET_TEMPLATE:
+      g_assert (self->template_num > 0);
+
+      co_get_template.data_len[0] = GET_LEN_L (self->template_len * self->template_num);
+      co_get_template.data_len[1] = GET_LEN_H (self->template_len * self->template_num);
+      cmd_buf = (guint8 *) &co_get_template;
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_verify_get_template_cb);
+      break;
+
     case FP_RTK_VERIFY_CAPTURE:
       fpi_device_report_finger_status_changes (device,
                                                FP_FINGER_STATUS_NEEDED,
                                                FP_FINGER_STATUS_NONE);
 
       cmd_buf = (guint8 *) &co_start_capture;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 1, fp_task_ssm_generic_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_task_ssm_generic_cb);
       break;
 
     case FP_RTK_VERIFY_FINISH_CAPTURE:
       cmd_buf = (guint8 *) &co_finish_capture;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 1, fp_finish_capture_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_finish_capture_cb);
       break;
 
     case FP_RTK_VERIFY_ACCEPT_SAMPLE:
       co_accept_sample.param[0] = self->fp_purpose;
       cmd_buf = (guint8 *) &co_accept_sample;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT_NO_STATUS, 1, fp_accept_sample_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_NO_STATUS, 0, fp_accept_sample_cb);
       break;
 
     case FP_RTK_VERIFY_INDENTIFY_FEATURE:
-      cmd_buf = (guint8 *) &tls_identify_feature;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT_NO_STATUS, 0, fp_identify_feature_cb);
+      cmd_buf = (guint8 *) &nor_identify_feature;
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_NO_STATUS, 0, fp_identify_feature_cb);
       break;
 
     case FP_RTK_VERIFY_UPDATE_TEMPLATE:
       cmd_buf = (guint8 *) &co_update_template;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_task_ssm_generic_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_update_template_cb);
+      break;
+
+    case FP_RTK_VERIFY_CANCEL_CAPTURE:
+      co_cancel_capture.param[0] = self->fp_purpose;
+      cmd_buf = (guint8 *) &co_cancel_capture;
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_task_ssm_generic_cb);
       break;
     }
 }
@@ -869,7 +1022,6 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
   FpiDeviceRealtek *self = FPI_DEVICE_REALTEK (device);
   FpPrint *print = NULL;
   guint8 *cmd_buf = NULL;
-  guint8 *trans_id = NULL;
   GVariant *uid = NULL;
   GVariant *data = NULL;
   gsize user_id_len;
@@ -880,17 +1032,17 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
     case FP_RTK_ENROLL_GET_TEMPLATE:
       g_assert (self->template_num > 0);
 
-      co_get_template.data_len[0] = GET_LEN_L (TEMPLATE_LEN * self->template_num);
-      co_get_template.data_len[1] = GET_LEN_H (TEMPLATE_LEN * self->template_num);
+      co_get_template.data_len[0] = GET_LEN_L (self->template_len * self->template_num);
+      co_get_template.data_len[1] = GET_LEN_H (self->template_len * self->template_num);
 
       cmd_buf = (guint8 *) &co_get_template;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_get_template_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_enroll_get_template_cb);
       break;
 
     case FP_RTK_ENROLL_BEGIN_POS:
-      tls_enroll_begin.param[0] = self->pos_index;
-      cmd_buf = (guint8 *) &tls_enroll_begin;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_task_ssm_generic_cb);
+      nor_enroll_begin.param[0] = self->pos_index;
+      cmd_buf = (guint8 *) &nor_enroll_begin;
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_task_ssm_generic_cb);
       break;
 
     case FP_RTK_ENROLL_CAPTURE:
@@ -899,32 +1051,37 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
                                                FP_FINGER_STATUS_NONE);
 
       cmd_buf = (guint8 *) &co_start_capture;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 1, fp_task_ssm_generic_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_task_ssm_generic_cb);
       break;
 
     case FP_RTK_ENROLL_FINISH_CAPTURE:
       cmd_buf = (guint8 *) &co_finish_capture;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 1, fp_finish_capture_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_finish_capture_cb);
       break;
 
     case FP_RTK_ENROLL_ACCEPT_SAMPLE:
       co_accept_sample.param[0] = self->fp_purpose;
       cmd_buf = (guint8 *) &co_accept_sample;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT_NO_STATUS, 1, fp_accept_sample_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_NO_STATUS, 0, fp_accept_sample_cb);
       break;
 
     case FP_RTK_ENROLL_CHECK_DUPLICATE:
       cmd_buf = (guint8 *) &co_check_duplicate;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT_NO_STATUS, 1, fp_check_duplicate_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_NO_STATUS, 0, fp_check_duplicate_cb);
       break;
 
     case FP_RTK_ENROLL_COMMIT:
+      guint8 *trans_id = NULL;
+      gint payload_len;
+
+      payload_len = UID_PAYLOAD_LEN_DEFAULT;
+
       fpi_device_get_enroll_data (device, &print);
       user_id = fpi_print_generate_user_id (print);
       user_id_len = strlen (user_id);
       user_id_len = MIN (DEFAULT_UID_LEN, user_id_len);
 
-      payload = g_malloc0 (UID_PAYLOAD_LEN);
+      payload = g_malloc0 (payload_len);
       memcpy (payload, user_id, user_id_len);
 
       trans_id = g_steal_pointer (&payload);
@@ -945,10 +1102,18 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
 
       g_debug ("user_id: %s, finger: 0x%x", user_id, finger);
 
-      tls_enroll_commit.param[0] = SUB_FINGER_01;
-      cmd_buf = (guint8 *) &tls_enroll_commit;
-      realtek_sensor_cmd (self, cmd_buf, trans_id, FP_RTK_MSG_PLAINTEXT, 0, fp_task_ssm_generic_cb);
+      nor_enroll_commit.param[0] = SUB_FINGER_01;
+      nor_enroll_commit.data_len[0] = GET_LEN_L (payload_len);
+      nor_enroll_commit.data_len[1] = GET_LEN_H (payload_len);
+
+      cmd_buf = (guint8 *) &nor_enroll_commit;
+      rtk_sensor_bulk_cmd (self, cmd_buf, trans_id, FP_RTK_MSG_DEFAULT, 1, fp_enroll_commit_cb);
       break;
+
+    case FP_RTK_ENROLL_CANCEL_CAPTURE:
+      co_cancel_capture.param[0] = self->fp_purpose;
+      cmd_buf = (guint8 *) &co_cancel_capture;
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_task_ssm_generic_cb);
     }
 }
 
@@ -960,15 +1125,19 @@ fp_init_sm_run_state (FpiSsm *ssm, FpDevice *device)
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
+    case FP_RTK_INIT_GET_DEVICE_INFO:
+      rtk_send_ctrl_cmd (self, &get_device_info, NULL, fp_get_device_info_cb);
+      break;
+
     case FP_RTK_INIT_SELECT_OS:
       co_select_system.param[0] = 0x01;
       cmd_buf = (guint8 *) &co_select_system;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_task_ssm_generic_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_task_ssm_generic_cb);
       break;
 
     case FP_RTK_INIT_GET_ENROLL_NUM:
       cmd_buf = (guint8 *) &co_get_enroll_num;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_get_enroll_num_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_get_enroll_num_cb);
       break;
     }
 }
@@ -984,17 +1153,17 @@ fp_delete_sm_run_state (FpiSsm *ssm, FpDevice *device)
     case FP_RTK_DELETE_GET_POS:
       g_assert (self->template_num > 0);
 
-      co_get_template.data_len[0] = GET_LEN_L (TEMPLATE_LEN * self->template_num);
-      co_get_template.data_len[1] = GET_LEN_H (TEMPLATE_LEN * self->template_num);
+      co_get_template.data_len[0] = GET_LEN_L (self->template_len * self->template_num);
+      co_get_template.data_len[1] = GET_LEN_H (self->template_len * self->template_num);
 
       cmd_buf = (guint8 *) &co_get_template;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_get_delete_pos_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_get_delete_pos_cb);
       break;
 
     case FP_RTK_DELETE_PRINT:
       co_delete_record.param[0] = self->pos_index;
       cmd_buf = (guint8 *) &co_delete_record;
-      realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_task_ssm_generic_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_task_ssm_generic_cb);
       break;
     }
 }
@@ -1012,17 +1181,14 @@ identify_verify (FpDevice *device)
   g_assert (current_action == FPI_DEVICE_ACTION_VERIFY ||
             current_action == FPI_DEVICE_ACTION_IDENTIFY);
 
-  if (current_action == FPI_DEVICE_ACTION_IDENTIFY)
-    self->fp_purpose = FP_RTK_PURPOSE_IDENTIFY;
-  else
-    self->fp_purpose = FP_RTK_PURPOSE_VERIFY;
+  self->fp_purpose = FP_RTK_PURPOSE_IDENTIFY;
 
   g_assert (!self->task_ssm);
 
   self->task_ssm = fpi_ssm_new_full (device,
                                      fp_verify_sm_run_state,
                                      FP_RTK_VERIFY_NUM_STATES,
-                                     FP_RTK_VERIFY_NUM_STATES,
+                                     FP_RTK_VERIFY_CANCEL_CAPTURE,
                                      "Verify & Identify");
 
   fpi_ssm_start (self->task_ssm, fp_verify_ssm_done);
@@ -1042,7 +1208,7 @@ enroll (FpDevice *device)
   self->task_ssm = fpi_ssm_new_full (device,
                                      fp_enroll_sm_run_state,
                                      FP_RTK_ENROLL_NUM_STATES,
-                                     FP_RTK_ENROLL_NUM_STATES,
+                                     FP_RTK_ENROLL_CANCEL_CAPTURE,
                                      "Enroll");
 
   fpi_ssm_start (self->task_ssm, fp_enroll_ssm_done);
@@ -1167,7 +1333,7 @@ clear_storage (FpDevice *device)
   G_DEBUG_HERE ();
   co_delete_record.param[0] = 0xff;
   cmd_buf = (guint8 *) &co_delete_record;
-  realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 0, fp_clear_storage_cb);
+  rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 0, fp_clear_storage_cb);
 }
 
 static void
@@ -1179,11 +1345,11 @@ list_print (FpDevice *device)
   G_DEBUG_HERE ();
   g_assert (self->template_num > 0);
 
-  co_get_template.data_len[0] = GET_LEN_L (TEMPLATE_LEN * self->template_num);
-  co_get_template.data_len[1] = GET_LEN_H (TEMPLATE_LEN * self->template_num);
+  co_get_template.data_len[0] = GET_LEN_L (self->template_len * self->template_num);
+  co_get_template.data_len[1] = GET_LEN_H (self->template_len * self->template_num);
 
   cmd_buf = (guint8 *) &co_get_template;
-  realtek_sensor_cmd (self, cmd_buf, NULL, FP_RTK_MSG_PLAINTEXT, 1, fp_list_cb);
+  rtk_sensor_bulk_cmd (self, cmd_buf, NULL, FP_RTK_MSG_DEFAULT, 1, fp_list_cb);
 }
 
 static void

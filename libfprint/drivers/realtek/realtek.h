@@ -30,16 +30,17 @@
 
 #define EP_IN_MAX_BUF_SIZE 2048
 
-#define FP_RTK_CMD_TOTAL_LEN 12
-#define FP_RTK_CMD_LEN 2
-#define FP_RTK_CMD_PARAM_LEN 4
-#define FP_RTK_CMD_ADDR_LEN 4
-#define FP_RTK_CMD_DATA_LEN 2
+#define FP_RTK_CMD_BULK_TOTAL_LEN 12
+#define FP_RTK_CMD_BULK_LEN 2
+#define FP_RTK_CMD_BULK_PARAM_LEN 4
+#define FP_RTK_CMD_BULK_ADDR_LEN 4
+#define FP_RTK_CMD_BULK_DATA_LEN 2
 
-#define TEMPLATE_LEN 35
+#define TEMPLATE_LEN_COMMON 35
+
 #define SUBFACTOR_OFFSET 2
 #define UID_OFFSET 3
-#define UID_PAYLOAD_LEN 32
+#define UID_PAYLOAD_LEN_DEFAULT 32
 
 /* Command transfer timeout :ms*/
 #define CMD_TIMEOUT 1000
@@ -50,7 +51,7 @@
 #define DEFAULT_UID_LEN 28
 #define SUB_FINGER_01 0xFF
 
-#define GET_CMD_TYPE(val)                   ((val & 0xC0) >> 6)
+#define GET_BULK_CMD_TYPE(val)              ((val & 0xC0) >> 6)
 #define GET_TRANS_DATA_LEN(len_h, len_l)    ((len_h << 8) | len_l)
 #define GET_LEN_L(total_data_len)           ((total_data_len) & 0xff)
 #define GET_LEN_H(total_data_len)           ((total_data_len) >> 8)
@@ -67,19 +68,19 @@ typedef struct
 } CommandData;
 
 typedef enum {
-  FP_RTK_CMD_ONLY = 0,
-  FP_RTK_CMD_READ,
-  FP_RTK_CMD_WRITE,
+  FP_RTK_CMD_BULK_ONLY = 0,
+  FP_RTK_CMD_BULK_READ,
+  FP_RTK_CMD_BULK_WRITE,
 } FpRtkCmdType;
 
 typedef enum {
-  FP_RTK_MSG_PLAINTEXT = 0,
-  FP_RTK_MSG_PLAINTEXT_NO_STATUS,
+  FP_RTK_MSG_DEFAULT = 0,
+  FP_RTK_MSG_NO_STATUS,
 } FpRtkMsgType;
 
 typedef enum {
-  FP_RTK_PURPOSE_IDENTIFY = 0x01,     /* identify before enroll */
-  FP_RTK_PURPOSE_VERIFY   = 0x02,
+  FP_RTK_PURPOSE_VERIFY   = 0x01,
+  FP_RTK_PURPOSE_IDENTIFY = 0x02,
   FP_RTK_PURPOSE_ENROLL   = 0x04,
 } FpRtkPurpose;
 
@@ -107,15 +108,18 @@ typedef enum {
   FP_RTK_ENROLL_ACCEPT_SAMPLE,
   FP_RTK_ENROLL_CHECK_DUPLICATE,
   FP_RTK_ENROLL_COMMIT,
+  FP_RTK_ENROLL_CANCEL_CAPTURE,
   FP_RTK_ENROLL_NUM_STATES,
 } FpRtkEnrollState;
 
 typedef enum {
-  FP_RTK_VERIFY_CAPTURE = 0,
+  FP_RTK_VERIFY_GET_TEMPLATE = 0,
+  FP_RTK_VERIFY_CAPTURE,
   FP_RTK_VERIFY_FINISH_CAPTURE,
   FP_RTK_VERIFY_ACCEPT_SAMPLE,
   FP_RTK_VERIFY_INDENTIFY_FEATURE,
   FP_RTK_VERIFY_UPDATE_TEMPLATE,
+  FP_RTK_VERIFY_CANCEL_CAPTURE,
   FP_RTK_VERIFY_NUM_STATES,
 } FpRtkVerifyState;
 
@@ -126,7 +130,8 @@ typedef enum {
 } FpRtkDeleteState;
 
 typedef enum {
-  FP_RTK_INIT_SELECT_OS = 0,
+  FP_RTK_INIT_GET_DEVICE_INFO = 0,
+  FP_RTK_INIT_SELECT_OS,
   FP_RTK_INIT_GET_ENROLL_NUM,
   FP_RTK_INIT_NUM_STATES,
 } FpRtkInitState;
@@ -155,66 +160,87 @@ struct _FpiDeviceRealtek
   FpRtkPurpose    fp_purpose;
   gint            pos_index;
   gint            template_num;
+  gint            template_len;
 };
 
-struct realtek_fp_cmd
+struct rtk_cmd_bulk
 {
-  uint8_t cmd[FP_RTK_CMD_LEN];
-  uint8_t param[FP_RTK_CMD_PARAM_LEN];
-  uint8_t addr[FP_RTK_CMD_ADDR_LEN];
-  uint8_t data_len[FP_RTK_CMD_DATA_LEN];
+  uint8_t cmd[FP_RTK_CMD_BULK_LEN];
+  uint8_t param[FP_RTK_CMD_BULK_PARAM_LEN];
+  uint8_t addr[FP_RTK_CMD_BULK_ADDR_LEN];
+  uint8_t data_len[FP_RTK_CMD_BULK_DATA_LEN];
 };
 
-static struct realtek_fp_cmd co_start_capture = {
+struct rtk_cmd_ctrl
+{
+  int      direction;
+  uint8_t  request;
+  uint16_t value;
+  uint16_t index;
+  uint16_t len;
+};
+
+static struct rtk_cmd_ctrl get_device_info = {
+  .direction = G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+  .request = 0x07,
+  .value = 0x000D,
+  .index = 0x0000,
+  .len = 0x0008,
+};
+
+static struct rtk_cmd_bulk co_start_capture = {
   .cmd = {0x05, 0x05},
 };
 
-static struct realtek_fp_cmd co_finish_capture = {
+static struct rtk_cmd_bulk co_finish_capture = {
   .cmd = {0x45, 0x06},
   .data_len = {0x05},
 };
 
-static struct realtek_fp_cmd co_accept_sample = {
+static struct rtk_cmd_bulk co_accept_sample = {
   .cmd = {0x45, 0x08},
   .data_len = {0x09},
 };
 
-static struct realtek_fp_cmd tls_identify_feature = {
+static struct rtk_cmd_bulk nor_identify_feature = {
   .cmd = {0x45, 0x22},
   .data_len = {0x2A},
 };
 
-static struct realtek_fp_cmd co_get_enroll_num = {
+static struct rtk_cmd_bulk co_get_enroll_num = {
   .cmd = {0x45, 0x0d},
   .data_len = {0x02},
 };
 
-static struct realtek_fp_cmd co_get_template = {
+static struct rtk_cmd_bulk co_get_template = {
   .cmd = {0x45, 0x0E},
 };
 
-static struct realtek_fp_cmd tls_enroll_begin = {
+static struct rtk_cmd_bulk nor_enroll_begin = {
   .cmd = {0x05, 0x20},
 };
 
-static struct realtek_fp_cmd co_check_duplicate = {
+static struct rtk_cmd_bulk co_check_duplicate = {
   .cmd = {0x45, 0x10},
   .data_len = {0x22},
 };
 
-static struct realtek_fp_cmd tls_enroll_commit = {
+static struct rtk_cmd_bulk nor_enroll_commit = {
   .cmd = {0x85, 0x21},
-  .data_len = {0x20},
 };
 
-static struct realtek_fp_cmd co_update_template = {
+static struct rtk_cmd_bulk co_update_template = {
   .cmd = {0x05, 0x11},
 };
 
-static struct realtek_fp_cmd co_delete_record = {
+static struct rtk_cmd_bulk co_delete_record = {
   .cmd = {0x05, 0x0F},
 };
 
-static struct realtek_fp_cmd co_select_system = {
+static struct rtk_cmd_bulk co_select_system = {
   .cmd = {0x05, 0x13},
+};
+
+static struct rtk_cmd_bulk co_cancel_capture = {
+  .cmd = {0x05, 0x07},
 };

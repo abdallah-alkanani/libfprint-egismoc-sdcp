@@ -1363,6 +1363,7 @@ gx_fp_probe (FpDevice *device)
     case 0x6014:
     case 0x6092:
     case 0x6094:
+    case 0x609A:
     case 0x609C:
     case 0x60BC:
     case 0x6304:
@@ -1374,6 +1375,8 @@ gx_fp_probe (FpDevice *device)
     case 0x63AC:
     case 0x63BC:
     case 0x63CC:
+    case 0x650A:
+    case 0x650C:
     case 0x6582:
     case 0x6A94:
     case 0x659A:
@@ -1610,6 +1613,7 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x27c6,  .pid = 0x6014,  },
   { .vid = 0x27c6,  .pid = 0x6092,  },
   { .vid = 0x27c6,  .pid = 0x6094,  },
+  { .vid = 0x27c6,  .pid = 0x609A,  },
   { .vid = 0x27c6,  .pid = 0x609C,  },
   { .vid = 0x27c6,  .pid = 0x60A2,  },
   { .vid = 0x27c6,  .pid = 0x60A4,  },
@@ -1624,6 +1628,8 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x27c6,  .pid = 0x63BC,  },
   { .vid = 0x27c6,  .pid = 0x63CC,  },
   { .vid = 0x27c6,  .pid = 0x6496,  },
+  { .vid = 0x27c6,  .pid = 0x650A,  },
+  { .vid = 0x27c6,  .pid = 0x650C,  },
   { .vid = 0x27c6,  .pid = 0x6582,  },
   { .vid = 0x27c6,  .pid = 0x6584,  },
   { .vid = 0x27c6,  .pid = 0x658C,  },
@@ -1632,6 +1638,7 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x27c6,  .pid = 0x659A,  },
   { .vid = 0x27c6,  .pid = 0x659C,  },
   { .vid = 0x27c6,  .pid = 0x6A94,  },
+  { .vid = 0x27c6,  .pid = 0x6512,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 

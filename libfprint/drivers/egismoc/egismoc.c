@@ -32,6 +32,7 @@
 #include <sys/param.h>
 
 #include "drivers_api.h"
+#include "fpi-byte-writer.h"
 
 #include "egismoc.h"
 
@@ -42,15 +43,17 @@ struct _FpiDeviceEgisMoc
   FpiSsm         *cmd_ssm;
   FpiUsbTransfer *cmd_transfer;
   GCancellable   *interrupt_cancellable;
-
-  int             enrolled_num;
   GPtrArray      *enrolled_ids;
+  gint            max_enroll_stages;
 };
 
 G_DEFINE_TYPE (FpiDeviceEgisMoc, fpi_device_egismoc, FP_TYPE_DEVICE);
 
 static const FpIdEntry egismoc_id_table[] = {
   { .vid = 0x1c7a, .pid = 0x0582, .driver_data = EGISMOC_DRIVER_CHECK_PREFIX_TYPE1 },
+  { .vid = 0x1c7a, .pid = 0x0583, .driver_data = EGISMOC_DRIVER_CHECK_PREFIX_TYPE1 },
+  { .vid = 0x1c7a, .pid = 0x0586, .driver_data = EGISMOC_DRIVER_CHECK_PREFIX_TYPE1 | EGISMOC_DRIVER_MAX_ENROLL_STAGES_20 },
+  { .vid = 0x1c7a, .pid = 0x0587, .driver_data = EGISMOC_DRIVER_CHECK_PREFIX_TYPE1 | EGISMOC_DRIVER_MAX_ENROLL_STAGES_20 },
   { .vid = 0x1c7a, .pid = 0x05a1, .driver_data = EGISMOC_DRIVER_CHECK_PREFIX_TYPE2 },
   { .vid = 0,      .pid = 0,      .driver_data = 0 }
 };
@@ -154,8 +157,6 @@ egismoc_task_ssm_done (FpiSsm   *ssm,
   self->task_ssm = NULL;
 
   g_clear_pointer (&self->enrolled_ids, g_ptr_array_unref);
-  self->enrolled_ids = NULL;
-  self->enrolled_num = -1;
 
   if (error)
     fpi_device_action_error (device, error);
@@ -273,43 +274,24 @@ egismoc_cmd_ssm_done (FpiSsm   *ssm,
     data->callback (device, NULL, 0, g_steal_pointer (&local_error));
 }
 
-typedef union
-{
-  guint16 check_value;
-  guchar  check_bytes[EGISMOC_CHECK_BYTES_LENGTH];
-} EgisMocCheckBytes;
-
-G_STATIC_ASSERT (G_SIZEOF_MEMBER (EgisMocCheckBytes, check_value) ==
-                 sizeof (guint8) * EGISMOC_CHECK_BYTES_LENGTH);
-
 /*
  * Derive the 2 "check bytes" for write payloads
  * 32-bit big-endian sum of all 16-bit words (including check bytes) MOD 0xFFFF
  * should be 0, otherwise the device will reject the payload
  */
-static EgisMocCheckBytes
-egismoc_get_check_bytes (const guchar *value,
-                         const gsize   value_length)
+static guint16
+egismoc_get_check_bytes (FpiByteReader *reader)
 {
   fp_dbg ("Get check bytes");
-  EgisMocCheckBytes check_bytes;
-  const size_t steps = (value_length + 1) / 2;
-  guint16 values[steps];
   size_t sum_values = 0;
+  guint16 val;
 
-  for (int i = 0, j = 0; i < value_length; i += 2, j++)
-    {
-      values[j] = (value[i] << 8 & 0xff00);
+  fpi_byte_reader_set_pos (reader, 0);
 
-      if (i < value_length - 1)
-        values[j] |= value[i + 1] & 0x00ff;
-    }
+  while (fpi_byte_reader_get_uint16_be (reader, &val))
+    sum_values += val;
 
-  for (int i = 0; i < steps; i++)
-    sum_values += values[i];
-
-  check_bytes.check_value = GUINT16_TO_BE (0xffff - (sum_values % 0xffff));
-  return check_bytes;
+  return G_MAXUINT16 - (sum_values % G_MAXUINT16);
 }
 
 static void
@@ -319,22 +301,15 @@ egismoc_exec_cmd (FpDevice         *device,
                   GDestroyNotify    cmd_destroy,
                   SynCmdMsgCallback callback)
 {
-  fp_dbg ("Execute command and get response");
-  FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
-  EgisMocCheckBytes check_bytes;
-  g_autofree guchar *buffer_out = NULL;
-  gsize buffer_out_length = 0;
-
+  g_auto(FpiByteWriter) writer = {0};
   g_autoptr(FpiUsbTransfer) transfer = NULL;
-  CommandData *data = g_new0 (CommandData, 1);
+  FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
+  g_autofree CommandData *data = NULL;
+  gsize buffer_out_length = 0;
+  gboolean written = TRUE;
+  guint16 check_value;
 
-  g_assert (self->cmd_ssm == NULL);
-  self->cmd_ssm = fpi_ssm_new (device,
-                               egismoc_cmd_run_state,
-                               CMD_STATES);
-
-  transfer = fpi_usb_transfer_new (device);
-  transfer->short_is_error = TRUE;
+  fp_dbg ("Execute command and get response");
 
   /*
    * buffer_out should be a fully composed command (with prefix, check bytes, etc)
@@ -347,40 +322,60 @@ egismoc_exec_cmd (FpDevice         *device,
   buffer_out_length = egismoc_write_prefix_len
                       + EGISMOC_CHECK_BYTES_LENGTH
                       + cmd_length;
-  buffer_out = g_new0 (guchar, buffer_out_length);
+
+  fpi_byte_writer_init_with_size (&writer, buffer_out_length +
+                                  (buffer_out_length % 2 ? 1 : 0), TRUE);
 
   /* Prefix */
-  memcpy (buffer_out, egismoc_write_prefix, egismoc_write_prefix_len);
+  written &= fpi_byte_writer_put_data (&writer, egismoc_write_prefix,
+                                       egismoc_write_prefix_len);
 
   /* Check Bytes - leave them as 00 for now then later generate and copy over
    * the real ones */
+  written &= fpi_byte_writer_change_pos (&writer, EGISMOC_CHECK_BYTES_LENGTH);
 
   /* Command Payload */
-  memcpy (buffer_out + egismoc_write_prefix_len + EGISMOC_CHECK_BYTES_LENGTH,
-          cmd, cmd_length);
-
-  /* destroy cmd if requested */
-  if (cmd_destroy)
-    cmd_destroy (cmd);
+  written &= fpi_byte_writer_put_data (&writer, cmd, cmd_length);
 
   /* Now fetch and set the "real" check bytes based on the currently
    * assembled payload */
-  check_bytes = egismoc_get_check_bytes (buffer_out, buffer_out_length);
-  memcpy (buffer_out + egismoc_write_prefix_len, check_bytes.check_bytes,
-          EGISMOC_CHECK_BYTES_LENGTH);
+  check_value = egismoc_get_check_bytes (FPI_BYTE_READER (&writer));
+  fpi_byte_writer_set_pos (&writer, egismoc_write_prefix_len);
+  written &= fpi_byte_writer_put_uint16_be (&writer, check_value);
+
+  /* destroy cmd if requested */
+  if (cmd_destroy)
+    g_clear_pointer (&cmd, cmd_destroy);
+
+  g_assert (self->cmd_ssm == NULL);
+  self->cmd_ssm = fpi_ssm_new (device,
+                               egismoc_cmd_run_state,
+                               CMD_STATES);
+
+  data = g_new0 (CommandData, 1);
+  data->callback = callback;
+  fpi_ssm_set_data (self->cmd_ssm, g_steal_pointer (&data), g_free);
+
+  if (!written)
+    {
+      fpi_ssm_start (self->cmd_ssm, egismoc_cmd_ssm_done);
+      fpi_ssm_mark_failed (self->cmd_ssm,
+                           fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
+      return;
+    }
+
+  transfer = fpi_usb_transfer_new (device);
+  transfer->short_is_error = TRUE;
+  transfer->ssm = self->cmd_ssm;
 
   fpi_usb_transfer_fill_bulk_full (transfer,
                                    EGISMOC_EP_CMD_OUT,
-                                   g_steal_pointer (&buffer_out),
+                                   fpi_byte_writer_reset_and_get_data (&writer),
                                    buffer_out_length,
                                    g_free);
-  transfer->ssm = self->cmd_ssm;
 
   g_assert (self->cmd_transfer == NULL);
   self->cmd_transfer = g_steal_pointer (&transfer);
-  data->callback = callback;
-
-  fpi_ssm_set_data (self->cmd_ssm, data, g_free);
   fpi_ssm_start (self->cmd_ssm, egismoc_cmd_ssm_done);
 }
 
@@ -419,11 +414,13 @@ egismoc_get_enrolled_prints (FpDevice *device)
   FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
 
   g_autoptr(GPtrArray) result = g_ptr_array_new_with_free_func (g_object_unref);
-  FpPrint *print = NULL;
 
-  for (int i = 0; i < self->enrolled_num; i++)
+  if (!self->enrolled_ids)
+    return g_steal_pointer (&result);
+
+  for (guint i = 0; i < self->enrolled_ids->len; i++)
     {
-      print = fp_print_new (device);
+      FpPrint *print = fp_print_new (device);
       egismoc_set_print_data (print, g_ptr_array_index (self->enrolled_ids, i), NULL);
       g_ptr_array_add (result, g_object_ref_sink (print));
     }
@@ -448,26 +445,37 @@ egismoc_list_fill_enrolled_ids_cb (FpDevice *device,
 
   g_clear_pointer (&self->enrolled_ids, g_ptr_array_unref);
   self->enrolled_ids = g_ptr_array_new_with_free_func (g_free);
-  self->enrolled_num = 0;
+
+  FpiByteReader reader;
+  gboolean read = TRUE;
+
+  fpi_byte_reader_init (&reader, buffer_in, length_in);
+
+  read &= fpi_byte_reader_set_pos (&reader, EGISMOC_LIST_RESPONSE_PREFIX_SIZE);
 
   /*
    * Each fingerprint ID will be returned in this response as a 32 byte array
    * The other stuff in the payload is 16 bytes long, so if there is at least 1
    * print then the length should be at least 16+32=48 bytes long
    */
-  for (int pos = EGISMOC_LIST_RESPONSE_PREFIX_SIZE;
-       pos < length_in - EGISMOC_LIST_RESPONSE_SUFFIX_SIZE;
-       pos += EGISMOC_FINGERPRINT_DATA_SIZE, self->enrolled_num++)
+  while (read)
     {
-      g_autofree gchar *print_id = g_strndup ((gchar *) buffer_in + pos,
-                                              EGISMOC_FINGERPRINT_DATA_SIZE);
-      fp_dbg ("Device fingerprint %0d: %.*s", self->enrolled_num,
+      const guint8 *data;
+      g_autofree gchar *print_id = NULL;
+
+      read &= fpi_byte_reader_get_data (&reader, EGISMOC_FINGERPRINT_DATA_SIZE,
+                                        &data);
+      if (!read)
+        break;
+
+      print_id = g_strndup ((gchar *) data, EGISMOC_FINGERPRINT_DATA_SIZE);
+      fp_dbg ("Device fingerprint %0d: %.*s", self->enrolled_ids->len + 1,
               EGISMOC_FINGERPRINT_DATA_SIZE, print_id);
       g_ptr_array_add (self->enrolled_ids, g_steal_pointer (&print_id));
     }
 
   fp_info ("Number of currently enrolled fingerprints on the device is %d",
-           self->enrolled_num);
+           self->enrolled_ids->len);
 
   if (self->task_ssm)
     fpi_ssm_next_state (self->task_ssm);
@@ -514,6 +522,7 @@ egismoc_get_delete_cmd (FpDevice *device,
 {
   fp_dbg ("Get delete command");
   FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
+  g_auto(FpiByteWriter) writer = {0};
   g_autoptr(GVariant) print_data = NULL;
   g_autoptr(GVariant) print_data_id_var = NULL;
   const guchar *print_data_id = NULL;
@@ -521,7 +530,7 @@ egismoc_get_delete_cmd (FpDevice *device,
   g_autofree gchar *print_description = NULL;
   g_autofree guchar *enrolled_print_id = NULL;
   g_autofree guchar *result = NULL;
-  gsize pos = 0;
+  gboolean written = TRUE;
 
   /*
    * The final command body should contain:
@@ -537,7 +546,12 @@ egismoc_get_delete_cmd (FpDevice *device,
    *    identifiers (enrolled_list)
    */
 
-  const int num_to_delete = (!delete_print) ? self->enrolled_num : 1;
+  int num_to_delete = 0;
+  if (delete_print)
+    num_to_delete = 1;
+  else if (self->enrolled_ids)
+    num_to_delete = self->enrolled_ids->len;
+
   const gsize body_length = sizeof (guchar) * EGISMOC_FINGERPRINT_DATA_SIZE *
                             num_to_delete;
   /* total_length is the 6 various bytes plus prefix and body payload */
@@ -545,10 +559,10 @@ egismoc_get_delete_cmd (FpDevice *device,
                              body_length;
 
   /* pre-fill entire payload with 00s */
-  result = g_new0 (guchar, total_length);
+  fpi_byte_writer_init_with_size (&writer, total_length, TRUE);
 
   /* start with 00 00 (just move starting offset up by 2) */
-  pos = 2;
+  written &= fpi_byte_writer_set_pos (&writer, 2);
 
   /* Size Counter bytes */
   /* "easiest" way to handle 2-bytes size for counter is to hard-code logic for
@@ -557,37 +571,31 @@ egismoc_get_delete_cmd (FpDevice *device,
    * (assumed max is 10) */
   if (num_to_delete > 7)
     {
-      memset (result + pos, 0x01, sizeof (guchar));
-      pos += sizeof (guchar);
-      memset (result + pos, ((num_to_delete - 8) * 0x20) + 0x07, sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_put_uint8 (&writer, 0x01);
+      written &= fpi_byte_writer_put_uint8 (&writer, ((num_to_delete - 8) * 0x20) + 0x07);
     }
   else
     {
       /* first byte is 0x00, just skip it */
-      pos += sizeof (guchar);
-      memset (result + pos, (num_to_delete * 0x20) + 0x07, sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_change_pos (&writer, 1);
+      written &= fpi_byte_writer_put_uint8 (&writer, (num_to_delete * 0x20) + 0x07);
     }
 
   /* command prefix */
-  memcpy (result + pos, cmd_delete_prefix, cmd_delete_prefix_len);
-  pos += cmd_delete_prefix_len;
+  written &= fpi_byte_writer_put_data (&writer, cmd_delete_prefix,
+                                       cmd_delete_prefix_len);
 
   /* 2-bytes size logic for counter again */
   if (num_to_delete > 7)
     {
-      memset (result + pos, 0x01, sizeof (guchar));
-      pos += sizeof (guchar);
-      memset (result + pos, ((num_to_delete - 8) * 0x20), sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_put_uint8 (&writer, 0x01);
+      written &= fpi_byte_writer_put_uint8 (&writer, (num_to_delete - 8) * 0x20);
     }
   else
     {
       /* first byte is 0x00, just skip it */
-      pos += sizeof (guchar);
-      memset (result + pos, (num_to_delete * 0x20), sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_change_pos (&writer, 1);
+      written &= fpi_byte_writer_put_uint8 (&writer, num_to_delete * 0x20);
     }
 
   /* append desired 32-byte fingerprint IDs */
@@ -614,21 +622,26 @@ egismoc_get_delete_cmd (FpDevice *device,
 
       fp_info ("Delete fingerprint %s (%s)", print_description, print_data_id);
 
-      memcpy (result + pos, print_data_id, EGISMOC_FINGERPRINT_DATA_SIZE);
+      written &= fpi_byte_writer_put_data (&writer, print_data_id,
+                                           EGISMOC_FINGERPRINT_DATA_SIZE);
     }
   /* Otherwise assume this is a "clear" - just loop through and append all enrolled IDs */
-  else
+  else if (self->enrolled_ids)
     {
-      for (int i = 0; i < self->enrolled_ids->len; i++)
-        memcpy (result + pos + (EGISMOC_FINGERPRINT_DATA_SIZE * i),
-                g_ptr_array_index (self->enrolled_ids, i),
-                EGISMOC_FINGERPRINT_DATA_SIZE);
+      for (guint i = 0; i < self->enrolled_ids->len && written; i++)
+        {
+          written &= fpi_byte_writer_put_data (&writer,
+                                               g_ptr_array_index (self->enrolled_ids, i),
+                                               EGISMOC_FINGERPRINT_DATA_SIZE);
+        }
     }
+
+  g_assert (written);
 
   if (length_out)
     *length_out = total_length;
 
-  return g_steal_pointer (&result);
+  return fpi_byte_writer_reset_and_get_data (&writer);
 }
 
 static void
@@ -687,9 +700,7 @@ egismoc_delete_run_state (FpiSsm   *ssm,
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case DELETE_GET_ENROLLED_IDS:
-      /* get enrolled_ids and enrolled_num from device for use building
-       * delete payload below
-       */
+      /* get enrolled_ids from device for use building delete payload below */
       egismoc_exec_cmd (device, cmd_list, cmd_list_len, NULL,
                         egismoc_list_fill_enrolled_ids_cb);
       break;
@@ -761,7 +772,7 @@ egismoc_enroll_status_report (FpDevice    *device,
       enroll_print->stage++;
       fp_info ("Partial capture successful. Please touch the sensor again (%d/%d)",
                enroll_print->stage,
-               EGISMOC_MAX_ENROLL_NUM);
+               self->max_enroll_stages);
       fpi_device_enroll_progress (device, enroll_print->stage, enroll_print->print, NULL);
       break;
 
@@ -841,7 +852,7 @@ egismoc_read_capture_cb (FpDevice *device,
       egismoc_enroll_status_report (device, enroll_print, ENROLL_STATUS_RETRY, error);
     }
 
-  if (enroll_print->stage == EGISMOC_ENROLL_TIMES)
+  if (enroll_print->stage == self->max_enroll_stages)
     fpi_ssm_next_state (self->task_ssm);
   else
     fpi_ssm_jump_to_state (self->task_ssm, ENROLL_CAPTURE_SENSOR_RESET);
@@ -884,26 +895,28 @@ egismoc_get_check_cmd (FpDevice *device,
 {
   fp_dbg ("Get check command");
   FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
+  g_auto(FpiByteWriter) writer = {0};
   g_autofree guchar *result = NULL;
-  gsize pos = 0;
+  gboolean written = TRUE;
 
   /*
    * The final command body should contain:
    * 1) hard-coded 00 00
    * 2) 2-byte size indiciator, 20*Number enrolled identifiers plus 9 in form of:
-   *    (enrolled_num + 1) * 0x20 + 0x09
+   *    (enrolled_ids->len + 1) * 0x20 + 0x09
    *    Since max prints can be higher than 7 then this goes up to 2 bytes
    *    (e9 + 9 = 109)
    * 3) Hard-coded prefix (cmd_check_prefix)
    * 4) 2-byte size indiciator, 20*Number of enrolled identifiers without plus 9
-   *    ((enrolled_num + 1) * 0x20)
+   *    ((enrolled_ids->len + 1) * 0x20)
    * 5) Hard-coded 32 * 0x00 bytes
    * 6) All of the currently registered prints in their 32-byte device identifiers
    *    (enrolled_list)
    * 7) Hard-coded suffix (cmd_check_suffix)
    */
 
-  const gsize body_length = sizeof (guchar) * self->enrolled_num *
+  g_assert (self->enrolled_ids);
+  const gsize body_length = sizeof (guchar) * self->enrolled_ids->len *
                             EGISMOC_FINGERPRINT_DATA_SIZE;
 
   /* prefix length can depend on the type */
@@ -921,87 +934,82 @@ egismoc_get_check_cmd (FpDevice *device,
                              + cmd_check_suffix_len;
 
   /* pre-fill entire payload with 00s */
-  result = g_new0 (guchar, total_length);
+  fpi_byte_writer_init_with_size (&writer, total_length, TRUE);
 
   /* start with 00 00 (just move starting offset up by 2) */
-  pos = 2;
+  written &= fpi_byte_writer_set_pos (&writer, 2);
 
   /* Size Counter bytes */
   /* "easiest" way to handle 2-bytes size for counter is to hard-code logic for
    * when we go to the 2nd byte
    * note this will not work in case any model ever supports more than 14 prints
    * (assumed max is 10) */
-  if (self->enrolled_num > 6)
+  if (self->enrolled_ids->len > 6)
     {
-      memset (result + pos, 0x01, sizeof (guchar));
-      pos += sizeof (guchar);
-      memset (result + pos, ((self->enrolled_num - 7) * 0x20) + 0x09,
-              sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_put_uint8 (&writer, 0x01);
+      written &= fpi_byte_writer_put_uint8 (&writer,
+                                            ((self->enrolled_ids->len - 7) * 0x20)
+                                            + 0x09);
     }
   else
     {
       /* first byte is 0x00, just skip it */
-      pos += sizeof (guchar);
-      memset (result + pos, ((self->enrolled_num + 1) * 0x20) + 0x09,
-              sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_change_pos (&writer, 1);
+      written &= fpi_byte_writer_put_uint8 (&writer,
+                                            ((self->enrolled_ids->len + 1) * 0x20) +
+                                            0x09);
     }
 
   /* command prefix */
   if (fpi_device_get_driver_data (device) & EGISMOC_DRIVER_CHECK_PREFIX_TYPE2)
-    {
-      memcpy (result + pos, cmd_check_prefix_type2, cmd_check_prefix_type2_len);
-      pos += cmd_check_prefix_type2_len;
-    }
+    written &= fpi_byte_writer_put_data (&writer, cmd_check_prefix_type2,
+                                         cmd_check_prefix_type2_len);
   else
-    {
-      memcpy (result + pos, cmd_check_prefix_type1, cmd_check_prefix_type1_len);
-      pos += cmd_check_prefix_type1_len;
-    }
+    written &= fpi_byte_writer_put_data (&writer, cmd_check_prefix_type1,
+                                         cmd_check_prefix_type1_len);
 
   /* 2-bytes size logic for counter again */
-  if (self->enrolled_num > 6)
+  if (self->enrolled_ids->len > 6)
     {
-      memset (result + pos, 0x01, sizeof (guchar));
-      pos += sizeof (guchar);
-      memset (result + pos, (self->enrolled_num - 7) * 0x20, sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_put_uint8 (&writer, 0x01);
+      written &= fpi_byte_writer_put_uint8 (&writer,
+                                            (self->enrolled_ids->len - 7) * 0x20);
     }
   else
     {
       /* first byte is 0x00, just skip it */
-      pos += sizeof (guchar);
-      memset (result + pos, (self->enrolled_num + 1) * 0x20, sizeof (guchar));
-      pos += sizeof (guchar);
+      written &= fpi_byte_writer_change_pos (&writer, 1);
+      written &= fpi_byte_writer_put_uint8 (&writer,
+                                            (self->enrolled_ids->len + 1) * 0x20);
     }
 
   /* add 00s "separator" to offset position */
-  pos += EGISMOC_CMD_CHECK_SEPARATOR_LENGTH;
+  written &= fpi_byte_writer_change_pos (&writer,
+                                         EGISMOC_CMD_CHECK_SEPARATOR_LENGTH);
 
-  /* append all currently registered 32-byte fingerprint IDs */
-  const gsize print_id_length = sizeof (guchar) * EGISMOC_FINGERPRINT_DATA_SIZE;
-
-  for (int i = 0; i < self->enrolled_num; i++)
+  for (guint i = 0; i < self->enrolled_ids->len && written; i++)
     {
-      gchar *device_print_id = g_ptr_array_index (self->enrolled_ids, i);
-      memcpy (result + pos + (print_id_length * i), device_print_id, print_id_length);
+      written &= fpi_byte_writer_put_data (&writer,
+                                           g_ptr_array_index (self->enrolled_ids, i),
+                                           EGISMOC_FINGERPRINT_DATA_SIZE);
     }
-  pos += body_length;
 
   /* command suffix */
-  memcpy (result + pos, cmd_check_suffix, cmd_check_suffix_len);
+  written &= fpi_byte_writer_put_data (&writer, cmd_check_suffix,
+                                       cmd_check_suffix_len);
+  g_assert (written);
 
   if (length_out)
     *length_out = total_length;
 
-  return g_steal_pointer (&result);
+  return fpi_byte_writer_reset_and_get_data (&writer);
 }
 
 static void
 egismoc_enroll_run_state (FpiSsm   *ssm,
                           FpDevice *device)
 {
+  g_auto(FpiByteWriter) writer = {0};
   FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
   EnrollPrint *enroll_print = fpi_ssm_get_data (ssm);
   g_autofree guchar *payload = NULL;
@@ -1012,13 +1020,13 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case ENROLL_GET_ENROLLED_IDS:
-      /* get enrolled_ids and enrolled_num from device for use in check stages below */
+      /* get enrolled_ids from device for use in check stages below */
       egismoc_exec_cmd (device, cmd_list, cmd_list_len,
                         NULL, egismoc_list_fill_enrolled_ids_cb);
       break;
 
     case ENROLL_CHECK_ENROLLED_NUM:
-      if (self->enrolled_num >= EGISMOC_MAX_ENROLL_NUM)
+      if (self->enrolled_ids->len >= EGISMOC_MAX_ENROLL_NUM)
         {
           egismoc_enroll_status_report (device, enroll_print, ENROLL_STATUS_DEVICE_FULL,
                                         fpi_device_error_new (FP_DEVICE_ERROR_DATA_FULL));
@@ -1089,14 +1097,23 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
       device_print_id = g_strndup (user_id, EGISMOC_FINGERPRINT_DATA_SIZE);
       egismoc_set_print_data (enroll_print->print, device_print_id, user_id);
 
-      /* create new dynamic payload of cmd_new_print_prefix + device_print_id */
-      payload_length = cmd_new_print_prefix_len + EGISMOC_FINGERPRINT_DATA_SIZE;
-      payload = g_new0 (guchar, payload_length);
-      memcpy (payload, cmd_new_print_prefix, cmd_new_print_prefix_len);
-      memcpy (payload + cmd_new_print_prefix_len, device_print_id,
-              EGISMOC_FINGERPRINT_DATA_SIZE);
+      fpi_byte_writer_init (&writer);
+      if (!fpi_byte_writer_put_data (&writer, cmd_new_print_prefix,
+                                     cmd_new_print_prefix_len))
+        {
+          fpi_ssm_mark_failed (ssm, fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
+          break;
+        }
+      if (!fpi_byte_writer_put_data (&writer, (guint8 *) device_print_id,
+                                     EGISMOC_FINGERPRINT_DATA_SIZE))
+        {
+          fpi_ssm_mark_failed (ssm, fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
+          break;
+        }
 
-      egismoc_exec_cmd (device, g_steal_pointer (&payload), payload_length,
+      payload_length = fpi_byte_writer_get_size (&writer);
+      egismoc_exec_cmd (device, fpi_byte_writer_reset_and_get_data (&writer),
+                        payload_length,
                         g_free, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1239,13 +1256,13 @@ egismoc_identify_run_state (FpiSsm   *ssm,
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case IDENTIFY_GET_ENROLLED_IDS:
-      /* get enrolled_ids and enrolled_num from device for use in check stages below */
+      /* get enrolled_ids from device for use in check stages below */
       egismoc_exec_cmd (device, cmd_list, cmd_list_len,
                         NULL, egismoc_list_fill_enrolled_ids_cb);
       break;
 
     case IDENTIFY_CHECK_ENROLLED_NUM:
-      if (self->enrolled_num == 0)
+      if (self->enrolled_ids->len == 0)
         {
           fpi_ssm_mark_failed (g_steal_pointer (&self->task_ssm),
                                fpi_device_error_new (FP_DEVICE_ERROR_DATA_NOT_FOUND));
@@ -1447,6 +1464,71 @@ egismoc_dev_init_handler (FpiSsm   *ssm,
 }
 
 static void
+egismoc_probe (FpDevice *device)
+{
+  GUsbDevice *usb_dev;
+  GError *error = NULL;
+  g_autofree gchar *serial = NULL;
+  FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
+
+  fp_dbg ("%s enter --> ", G_STRFUNC);
+
+  /* Claim usb interface */
+  usb_dev = fpi_device_get_usb_device (device);
+  if (!g_usb_device_open (usb_dev, &error))
+    {
+      fp_dbg ("%s g_usb_device_open failed %s", G_STRFUNC, error->message);
+      fpi_device_probe_complete (device, NULL, NULL, error);
+      return;
+    }
+
+  if (!g_usb_device_reset (usb_dev, &error))
+    {
+      fp_dbg ("%s g_usb_device_reset failed %s", G_STRFUNC, error->message);
+      g_usb_device_close (usb_dev, NULL);
+      fpi_device_probe_complete (device, NULL, NULL, error);
+      return;
+    }
+
+  if (!g_usb_device_claim_interface (usb_dev, 0, 0, &error))
+    {
+      fp_dbg ("%s g_usb_device_claim_interface failed %s", G_STRFUNC, error->message);
+      g_usb_device_close (usb_dev, NULL);
+      fpi_device_probe_complete (device, NULL, NULL, error);
+      return;
+    }
+
+  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") == 0)
+    serial = g_strdup ("emulated-device");
+  else
+    serial = g_usb_device_get_string_descriptor (usb_dev,
+                                                 g_usb_device_get_serial_number_index (usb_dev),
+                                                 &error);
+
+  if (error)
+    {
+      fp_dbg ("%s g_usb_device_get_string_descriptor failed %s", G_STRFUNC, error->message);
+      g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (device)),
+                                      0, 0, NULL);
+      g_usb_device_close (usb_dev, NULL);
+      fpi_device_probe_complete (device, NULL, NULL, error);
+      return;
+    }
+
+  if (fpi_device_get_driver_data (device) & EGISMOC_DRIVER_MAX_ENROLL_STAGES_20)
+    self->max_enroll_stages = 20;
+  else
+    self->max_enroll_stages = EGISMOC_MAX_ENROLL_STAGES_DEFAULT;
+
+  fpi_device_set_nr_enroll_stages (device, self->max_enroll_stages);
+
+  g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (device)), 0, 0, NULL);
+  g_usb_device_close (usb_dev, NULL);
+
+  fpi_device_probe_complete (device, serial, NULL, error);
+}
+
+static void
 egismoc_open (FpDevice *device)
 {
   fp_dbg ("Opening device");
@@ -1526,10 +1608,11 @@ fpi_device_egismoc_class_init (FpiDeviceEgisMocClass *klass)
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->id_table = egismoc_id_table;
-  dev_class->nr_enroll_stages = EGISMOC_ENROLL_TIMES;
+  dev_class->nr_enroll_stages = EGISMOC_MAX_ENROLL_STAGES_DEFAULT;
   /* device should be "always off" unless being used */
   dev_class->temp_hot_seconds = 0;
 
+  dev_class->probe = egismoc_probe;
   dev_class->open = egismoc_open;
   dev_class->cancel = egismoc_cancel;
   dev_class->suspend = egismoc_suspend;

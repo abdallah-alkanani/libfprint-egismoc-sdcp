@@ -50,6 +50,12 @@ We include **Bozorth3** from the **[US Export Controlled]**
 distribution, which we have determined to be fine
 being shipped in an open source project.
 
+## Get in *touch*
+
+ - [IRC] - `#fprint` @ `irc.oftc.net`
+ - [Matrix] - `#fprint:matrix.org` bridged to the IRC channel
+ - [MailingList] - low traffic, not much used these days
+
 <br/>
 
 <div align="right">
@@ -66,6 +72,9 @@ being shipped in an open source project.
 [Unsupported]: https://gitlab.freedesktop.org/libfprint/wiki/-/wikis/Unsupported-Devices
 [Supported]: https://fprint.freedesktop.org/supported-devices.html
 [Website]: https://fprint.freedesktop.org/
+[MailingList]: https://lists.freedesktop.org/mailman/listinfo/fprint
+[IRC]: ircs://irc.oftc.net:6697/#fprint
+[Matrix]: https://matrix.to/#/#fprint:matrix.org
 
 [Contribute]: ./HACKING.md
 [License]: ./COPYING

@@ -1,3 +1,11 @@
+spi_sources = []
+spi_headers = []
+
+if enabled_spi_drivers.length() > 0
+  spi_headers = ['fpi-spi-transfer.h']
+  spi_sources = ['fpi-spi-transfer.c']
+endif
+
 libfprint_sources = [
     'fp-context.c',
     'fp-device.c',
@@ -16,7 +24,7 @@ libfprint_private_sources = [
     'fpi-print.c',
     'fpi-ssm.c',
     'fpi-usb-transfer.c',
-    'fpi-spi-transfer.c',
+    spi_sources,
 ]
 
 libfprint_public_headers = [
@@ -41,7 +49,7 @@ libfprint_private_headers = [
     'fpi-minutiae.h',
     'fpi-print.h',
     'fpi-usb-transfer.h',
-    'fpi-spi-transfer.h',
+    spi_headers,
     'fpi-ssm.h',
 ]
 
