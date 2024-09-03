@@ -24,8 +24,7 @@ libfprint_private_sources = [
     'fpi-print.c',
     'fpi-ssm.c',
     'fpi-usb-transfer.c',
-    spi_sources,
-]
+] + spi_sources
 
 libfprint_public_headers = [
     'fp-context.h',
@@ -49,9 +48,8 @@ libfprint_private_headers = [
     'fpi-minutiae.h',
     'fpi-print.h',
     'fpi-usb-transfer.h',
-    spi_headers,
     'fpi-ssm.h',
-]
+] + spi_headers
 
 nbis_sources = [
     'nbis/bozorth3/bozorth3.c',
