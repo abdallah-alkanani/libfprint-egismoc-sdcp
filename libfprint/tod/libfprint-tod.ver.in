@@ -238,6 +238,7 @@ global:
 
 LIBFPRINT_TOD_@tod_soversion@_1.94 {
 global:
+    fpi_byte_writer_change_pos;
     fpi_device_critical_enter;
     fpi_device_critical_leave;
     fpi_device_resume;
