@@ -21,27 +21,27 @@
 
 #define LIBFPRINT_2_SYMBOL_VERSION_2_0 "LIBFPRINT_2.0.0"
 #define LIBFPRINT_2_SYMBOL_VERSION(major, minor) \
-        LIBFPRINT_2_SYMBOL_VERSION_ ## major ## _ ## minor
+  LIBFPRINT_2_SYMBOL_VERSION_ ## major ## _ ## minor
 
 #define TOD_1_SYMBOL_VERSION_1_90 "LIBFPRINT_TOD_1.0.0"
 #define TOD_1_SYMBOL_VERSION_1_92 "LIBFPRINT_TOD_1_1.92"
 #define TOD_1_SYMBOL_VERSION_1_94 "LIBFPRINT_TOD_1_1.94"
 #define TOD_1_SYMBOL_VERSION(major, minor) \
-        TOD_1_SYMBOL_VERSION_ ## major ## _ ## minor
+  TOD_1_SYMBOL_VERSION_ ## major ## _ ## minor
 
 #define TOD_DEFAULT_UPSTREAM_SYMBOL_VERSIONED(symbol, major, minor) \
-        __asm__ (".symver " # symbol "," # symbol "@@@" \
-                 LIBFPRINT_2_SYMBOL_VERSION (major, minor));
+  __asm__ (".symver " # symbol "," # symbol "@@@" \
+           LIBFPRINT_2_SYMBOL_VERSION (major, minor));
 
 #define TOD_DEFAULT_UPSTREAM_SYMBOL(symbol) \
-        __asm__ (".symver " # symbol "," # symbol "@@@");
+  __asm__ (".symver " # symbol "," # symbol "@@@");
 
 #define TOD_DEFAULT_VERSION_SYMBOL(symbol, major, minor) \
-        __asm__ (".symver " # symbol "," # symbol "@@@" \
-                 TOD_1_SYMBOL_VERSION (major, minor));
+  __asm__ (".symver " # symbol "," # symbol "@@@" \
+           TOD_1_SYMBOL_VERSION (major, minor));
 #define TOD_VERSIONED_SYMBOL(symbol, major, minor) \
-        __asm__ (".symver " # symbol "_" # major "_" #minor "," # symbol "@" \
-                 TOD_1_SYMBOL_VERSION (major, minor));
+  __asm__ (".symver " # symbol "_" # major "_" #minor "," # symbol "@" \
+           TOD_1_SYMBOL_VERSION (major, minor));
 
 TOD_DEFAULT_VERSION_SYMBOL (fpi_ssm_new_full, 1, 92)
 TOD_VERSIONED_SYMBOL (fpi_ssm_new_full, 1, 90)

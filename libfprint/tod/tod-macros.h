@@ -20,13 +20,13 @@
 #pragma once
 
 #define TOD_PADDING(original, wasted) \
-        char _tod_expansion_padding[(GLIB_SIZEOF_VOID_P * (original)) - (wasted)];
+  char _tod_expansion_padding[(GLIB_SIZEOF_VOID_P * (original)) - (wasted)];
 
 #define TOD_PADDING_ALIGNED(original, wasted) \
-        TOD_PADDING (original, (wasted) + GLIB_SIZEOF_VOID_P)
+  TOD_PADDING (original, (wasted) + GLIB_SIZEOF_VOID_P)
 
 #define TOD_PADDING_ALIGNED4(original, wasted) \
-        TOD_PADDING (original, (wasted) + (GLIB_SIZEOF_VOID_P == 4 ? GLIB_SIZEOF_VOID_P : 0))
+  TOD_PADDING (original, (wasted) + (GLIB_SIZEOF_VOID_P == 4 ? GLIB_SIZEOF_VOID_P : 0))
 
 #define TOD_PADDING_ALIGNED8(original, wasted) \
-        TOD_PADDING (original, (wasted) + (GLIB_SIZEOF_VOID_P == 8 ? GLIB_SIZEOF_VOID_P : 0))
+  TOD_PADDING (original, (wasted) + (GLIB_SIZEOF_VOID_P == 8 ? GLIB_SIZEOF_VOID_P : 0))
