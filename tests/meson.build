@@ -600,7 +600,7 @@ if get_option('tod')
             check_libs_symbols,
             args: [libfprint.full_path(), libfprint_tod.full_path()],
             depends: [libfprint, libfprint_tod],
-            suite: ['abi-check', tod_suites ],
+            suite: ['abi-check', tod_suites, 'no-valgrind'],
         )
     endif
 endif
