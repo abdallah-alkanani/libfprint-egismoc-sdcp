@@ -277,6 +277,7 @@ test_device_public_enums (void)
   check_type_compatibility (FP_TYPE_DEVICE_TYPE, 1, 90, 1);
   check_type_compatibility (FP_TYPE_SCAN_TYPE, 1, 90, 1);
   check_type_compatibility (FP_TYPE_DEVICE_RETRY, 1, 90, 1);
+  check_type_compatibility (FP_TYPE_DEVICE_RETRY, 1, 94, 9);
   check_type_compatibility (FP_TYPE_DEVICE_ERROR, 1, 90, 1);
   check_type_compatibility (FP_TYPE_DEVICE_ERROR, 1, 90, 3);
   check_type_compatibility (FP_TYPE_DEVICE_ERROR, 1, 90, 4);
