@@ -22,6 +22,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "fpi-byte-reader.h"
+
 #define PACKAGE_CRC_SIZE (4)
 #define PACKAGE_HEADER_SIZE (8)
 
@@ -133,7 +135,7 @@ typedef struct _template_format
 typedef struct _gxfp_verify
 {
   bool     match;
-  uint32_t rejectdetail;
+  uint16_t rejectdetail;
   template_format_t  template;
 } gxfp_verify_t, *pgxfp_verify_t;
 
@@ -232,13 +234,11 @@ int gx_proto_build_package (uint8_t       *ppackage,
                             const uint8_t *payload,
                             uint32_t       payload_size);
 
-int gx_proto_parse_header (uint8_t     *buffer,
-                           uint32_t     buffer_len,
-                           pack_header *pheader);
+int gx_proto_parse_header (FpiByteReader *reader,
+                           pack_header   *pheader);
 
 int gx_proto_parse_body (uint16_t             cmd,
-                         uint8_t             *buffer,
-                         uint16_t             buffer_len,
+                         FpiByteReader       *byte_reader,
                          pgxfp_cmd_response_t presponse);
 
 int gx_proto_init_sensor_config (pgxfp_sensor_cfg_t pconfig);

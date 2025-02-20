@@ -19,7 +19,7 @@ default:
 variables:
   extends: .libfprint_common_variables
   FDO_DISTRIBUTION_TAG: $LIBFPRINT_IMAGE_TAG
-  FDO_DISTRIBUTION_VERSION: rawhide
+  FDO_DISTRIBUTION_VERSION: 41
   FDO_UPSTREAM_REPO: "libfprint/$CI_PROJECT_NAME"
   FEDORA_IMAGE: "$CI_REGISTRY/libfprint/$CI_PROJECT_NAME/fedora/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG"
   LAST_ABI_BREAK: "056ea541ddc97f5806cffbd99a12dc87e4da3546"
@@ -28,6 +28,8 @@ workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_PIPELINE_SOURCE == 'push'
+    - if: $CI_PIPELINE_SOURCE == 'schedule'
+    - if: $CI_PROJECT_NAMESPACE == 'libfprint' && $LIBFPRINT_CI_ACTION != ''
 
 stages:
   - image-build
@@ -41,7 +43,7 @@ image: $FEDORA_IMAGE
 
 .build_one_driver_template: &build_one_driver
   script:
-    # Build with a driver that doesn't need imaging, or nss
+    # Build with a driver that doesn't need imaging, or openssl
     - meson setup _build --werror -Ddrivers=$driver
     - meson compile -C _build
     - rm -rf _build/
@@ -57,11 +59,16 @@ image: $FEDORA_IMAGE
   script:
     - ./.ci/check-abi ${LAST_ABI_BREAK} $(git rev-parse HEAD)
 
+.standard_job:
+  rules:
+    - when: on_success
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+
 build:
   stage: build
-  except:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule"
+  extends:
+    - .standard_job
   variables:
     driver: virtual_image
   <<: *build_one_driver
@@ -76,9 +83,8 @@ build:
 
 test:
   stage: test
-  except:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule"
+  extends:
+    - .standard_job
   script:
     - meson setup _build --werror -Ddrivers=all -Db_coverage=true
     - meson test -C _build --print-errorlogs --no-stdsplit --timeout-multiplier 3
@@ -100,10 +106,8 @@ test:
 
 test_valgrind:
   stage: test
-  allow_failure: true
-  except:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule"
+  extends:
+    - .standard_job
   script:
     - meson setup _build -Ddrivers=all
     - meson compile -C _build
@@ -118,11 +122,27 @@ test_valgrind:
       - _build/meson-logs/testlog-valgrind.txt
     expire_in: 1 week
 
+test_asan:
+  stage: test
+  extends:
+    - .standard_job
+  script:
+    - meson setup _build -Ddrivers=all -Db_sanitize=address,undefined
+    - meson test -C _build --print-errorlogs --no-stdsplit
+  artifacts:
+    reports:
+      junit: "_build/meson-logs/testlog.junit.xml"
+    expose_as: 'Sanitizers test logs'
+    when: always
+    paths:
+      - _build/meson-logs
+      - _build/meson-logs/testlog.txt
+    expire_in: 1 week
+
 test_installed:
   stage: test
-  except:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule"
+  extends:
+    - .standard_job
   script:
     - meson setup _build --prefix=/usr -Ddrivers=all
     - meson install -C _build
@@ -144,9 +164,8 @@ test_installed:
 
 test_scan_build:
   stage: test
-  except:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule"
+  extends:
+    - .standard_job
   allow_failure: true
   script:
     - meson setup _build -Ddrivers=all
@@ -161,19 +180,23 @@ test_scan_build:
 
 test_indent:
   stage: check-source
-  except:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule"
+  extends:
+    - .standard_job
   script:
     - scripts/uncrustify.sh
     - git diff
     - git diff-index --name-only --exit-code HEAD
+  rules:
+    - changes:
+        compare_to: 'refs/heads/master'
+        paths:
+          - '**/*.c'
+          - '**/*.h'
 
 test_unsupported_list:
   stage: check-source
-  except:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule"
+  extends:
+    - .standard_job
   allow_failure: true
   script:
     - tests/hwdb-check-unsupported.py
@@ -193,7 +216,7 @@ flatpak:
     - if: '$CI_PROJECT_PATH != "libfprint/libfprint"'
       when: manual
       allow_failure: true
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - if: '$CI_COMMIT_BRANCH == "master"'
       allow_failure: true
@@ -214,9 +237,6 @@ flatpak:
 .container_fedora_build_base:
   extends: .fdo.container-build@fedora
   stage: image-build
-  only:
-    variables:
-      - $CI_PIPELINE_SOURCE == "never"
   variables:
     GIT_STRATEGY: none # no need to pull the whole tree for rebuilding the image
     # a list of packages to install
@@ -227,6 +247,8 @@ flatpak:
       libudev-devel
     FDO_DISTRIBUTION_EXEC: |
       $LIBFPRINT_EXEC
+  rules:
+    - when: never
 
 .container_fedora_build_forced:
   variables:
@@ -236,28 +258,27 @@ container_fedora_build_schedule:
   extends:
     - .container_fedora_build_base
     - .container_fedora_build_forced
-  only:
-    variables:
-      - $CI_PIPELINE_SOURCE == "schedule" && $CRON_TASK == "BUILD_CI_IMAGES"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CRON_TASK == "BUILD_CI_IMAGES"
+      when: always
 
 container_fedora_build_manual:
   extends:
     - .container_fedora_build_base
     - .container_fedora_build_forced
-  only:
-    variables:
-      - $LIBFPRINT_CI_ACTION == "build-image"
+  rules:
+    - if: $LIBFPRINT_CI_ACTION == "build-image"
+      when: always
 
 container_fedora_build_on_deps_changed:
   extends: .container_fedora_build_base
-  only:
-    variables:
-      - $CI_PROJECT_NAMESPACE == "libfprint" && $CI_PIPELINE_SOURCE != "schedule"
-    refs:
-      - branches
-      - merge_requests
-    changes:
-      - .gitlab-ci/libfprint-image-variables.yaml
+  rules:
+    - if: $CI_PROJECT_NAMESPACE == "libfprint" && $CI_PIPELINE_SOURCE != "schedule"
+      changes:
+        compare_to: 'refs/heads/master'
+        paths:
+          - '.gitlab-ci/libfprint-image-variables.yaml'
+          - '.gitlab-ci/libfprint-templates.yaml'
 
 pages:
   image: alpine:latest

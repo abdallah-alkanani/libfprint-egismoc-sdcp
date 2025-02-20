@@ -70,6 +70,7 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x10A5,  .pid = 0xD205,  },
   { .vid = 0x10A5,  .pid = 0x9524,  },
   { .vid = 0x10A5,  .pid = 0x9544,  },
+  { .vid = 0x10A5,  .pid = 0xC844,  },
   /* terminating entry */
   { .vid = 0,  .pid = 0,  .driver_data = 0 },
 };
@@ -1642,6 +1643,7 @@ fpc_dev_probe (FpDevice *device)
     case 0xD205:
     case 0x9524:
     case 0x9544:
+    case 0xC844:
       self->max_enroll_stage = MAX_ENROLL_SAMPLES;
       break;
 

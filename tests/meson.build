@@ -145,8 +145,7 @@ if get_option('introspection')
                     output: vdtest + '.test',
                     install_dir: installed_tests_testdir,
                     configuration: {
-                        # FIXME: use fs.name() on meson 0.58
-                        'exec': installed_tests_execdir / '@0@'.format(base_args[0]).split('/')[-1],
+                        'exec': installed_tests_execdir / fs.name(base_args[0]),
                         'env': ' '.join([
                             envs_str,
                             'LD_LIBRARY_PATH=' + installed_tests_libdir,
@@ -325,13 +324,25 @@ endforeach
 # Run udev rule generator with fatal warnings
 envs.set('UDEV_HWDB', udev_hwdb.full_path())
 envs.set('UDEV_HWDB_CHECK_CONTENTS', default_drivers_are_enabled ? '1' : '0')
+envs.set('G_MESSAGES_DEBUG', '')
 test('udev-hwdb',
      find_program('test-generated-hwdb.sh'),
      depends: udev_hwdb,
+     suite: ['data', 'no-valgrind'],
      env: envs)
 
+appstreamcli = find_program('appstreamcli', required: false)
+if appstreamcli.found()
+    test('metainfo-validate',
+        appstreamcli,
+        args: ['validate', metainfo_generator],
+        depends: metainfo_generator,
+        suite: ['data', 'no-valgrind'],
+    )
+endif
+
 gdb = find_program('gdb', required: false)
-if gdb.found()
+if gdb.found() and libfprint_sanitizers.length() == 0
     libfprint_wrapper = [
         gdb.full_path(),
         '-batch',
@@ -346,14 +357,32 @@ if gdb.found()
         ])
 endif
 
+if ('address' in libfprint_sanitizers or
+    'undefined' in libfprint_sanitizers or
+    'leak' in libfprint_sanitizers)
+    add_test_setup('sanitizers',
+        is_default: true,
+        timeout_multiplier: 3,
+        env: [
+            'ASAN_OPTIONS=verify_asan_link_order=0',
+        ])
+endif
+
 valgrind = find_program('valgrind', required: false)
-if valgrind.found()
+if valgrind.found() and libfprint_sanitizers.length() == 0
     glib_share = glib_dep.get_variable(pkgconfig: 'prefix') / 'share' / glib_dep.name()
     glib_suppressions = glib_share + '/valgrind/glib.supp'
-    libfprint_suppressions = '@0@/@1@'.format(meson.project_source_root(),
-        files('libfprint.supp')[0])
-    python_suppressions = '@0@/@1@'.format(meson.project_source_root(),
-        files('valgrind-python.supp')[0])
+    libfprint_suppressions = files('libfprint.supp')[0]
+    python_suppressions = files('valgrind-python.supp')[0]
+
+    if meson.version().version_compare('>=1.4')
+        libfprint_suppressions = libfprint_suppressions.full_path()
+        python_suppressions = python_suppressions.full_path()
+    else
+        libfprint_suppressions = meson.project_source_root() / '@0@'.format(libfprint_suppressions)
+        python_suppressions = meson.project_source_root() / '@0@'.format(python_suppressions)
+    endif
+
     libfprint_wrapper = [
         valgrind.full_path(),
         '--tool=memcheck',
@@ -370,11 +399,14 @@ if valgrind.found()
         '--suppressions=' + python_suppressions,
     ]
     add_test_setup('valgrind',
-        timeout_multiplier: 15,
+        timeout_multiplier: 20,
         exe_wrapper: libfprint_wrapper,
+        exclude_suites: ['no-valgrind'],
         env: [
             'G_SLICE=always-malloc',
             'UNDER_VALGRIND=1',
+            'FP_VIRTUAL_IMAGE_HOT_SECONDS=-1',
+            'FP_VIRTUAL_DEVICE_HOT_SECONDS=-1',
             'LIBFPRINT_TEST_WRAPPER=' + ' '.join(libfprint_wrapper),
         ])
 endif

@@ -128,11 +128,13 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
                    GError         *error)
 {
   FpiDeviceGoodixMoc *self = FPI_DEVICE_GOODIXMOC (device);
+  FpiByteReader reader = {0};
   CommandData *data = user_data;
-  int ret = -1, ssm_state = 0;
+  int ssm_state = 0;
   gxfp_cmd_response_t cmd_reponse = {0, };
   pack_header header;
   guint32 crc32_calc = 0;
+  guint32 crc32 = 0;
   guint16 cmd = 0;
 
   if (error)
@@ -154,8 +156,10 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
       return;
     }
 
-  ret = gx_proto_parse_header (transfer->buffer, transfer->actual_length, &header);
-  if (ret != 0)
+  reader.data = transfer->buffer;
+  reader.size = transfer->actual_length;
+
+  if (gx_proto_parse_header (&reader, &header) != 0)
     {
       fpi_ssm_mark_failed (transfer->ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -163,8 +167,17 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
       return;
     }
 
+  if (!fpi_byte_reader_set_pos (&reader, PACKAGE_HEADER_SIZE + header.len))
+    {
+      fpi_ssm_mark_failed (transfer->ssm,
+                           fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                     "Package crc read failed"));
+    }
+
   gx_proto_crc32_calc (transfer->buffer, PACKAGE_HEADER_SIZE + header.len, (uint8_t *) &crc32_calc);
-  if(crc32_calc != GUINT32_FROM_LE (*(uint32_t *) (transfer->buffer + PACKAGE_HEADER_SIZE + header.len)))
+
+  if (!fpi_byte_reader_get_uint32_le (&reader, &crc32) ||
+      crc32_calc != crc32)
     {
       fpi_ssm_mark_failed (transfer->ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -174,8 +187,11 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
 
   cmd = MAKE_CMD_EX (header.cmd0, header.cmd1);
 
-  ret = gx_proto_parse_body (cmd, &transfer->buffer[PACKAGE_HEADER_SIZE], header.len, &cmd_reponse);
-  if (ret != 0)
+  fpi_byte_reader_set_pos (&reader, 0);
+  reader.data = &transfer->buffer[PACKAGE_HEADER_SIZE];
+  reader.size = header.len;
+
+  if (gx_proto_parse_body (cmd, &reader, &cmd_reponse) != 0)
     {
       fpi_ssm_mark_failed (transfer->ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1366,6 +1382,7 @@ gx_fp_probe (FpDevice *device)
     case 0x609A:
     case 0x609C:
     case 0x60BC:
+    case 0x60C2:
     case 0x6304:
     case 0x631C:
     case 0x633C:
@@ -1618,6 +1635,7 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x27c6,  .pid = 0x60A2,  },
   { .vid = 0x27c6,  .pid = 0x60A4,  },
   { .vid = 0x27c6,  .pid = 0x60BC,  },
+  { .vid = 0x27c6,  .pid = 0x60C2,  },
   { .vid = 0x27c6,  .pid = 0x6304,  },
   { .vid = 0x27c6,  .pid = 0x631C,  },
   { .vid = 0x27c6,  .pid = 0x633C,  },
@@ -1639,6 +1657,7 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x27c6,  .pid = 0x659C,  },
   { .vid = 0x27c6,  .pid = 0x6A94,  },
   { .vid = 0x27c6,  .pid = 0x6512,  },
+  { .vid = 0x27c6,  .pid = 0x689A,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 

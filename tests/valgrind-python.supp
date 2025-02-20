@@ -67,3 +67,31 @@
    ...
    fun:_Py*
 }
+
+{
+   ignore__libpython_leaks
+   Memcheck:Leak
+   fun:malloc
+   obj:/usr/lib*/libpython3*.so.*
+}
+
+{
+   ignore__libpython_leaks
+   Memcheck:Leak
+   fun:malloc
+   obj:/usr/lib/*/libpython3*.so.*
+}
+
+{
+   ignore__libpython_leaks
+   Memcheck:Leak
+   fun:realloc
+   obj:/usr/lib*/libpython3*.so.*
+}
+
+{
+   ignore__libpython_leaks
+   Memcheck:Leak
+   fun:realloc
+   obj:/usr/lib/*/libpython3*.so.*
+}

@@ -1071,24 +1071,22 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
       break;
 
     case FP_RTK_ENROLL_COMMIT:
-      guint8 *trans_id = NULL;
+      gchar *valid_uid = NULL;
       gint payload_len;
 
       payload_len = UID_PAYLOAD_LEN_DEFAULT;
 
       fpi_device_get_enroll_data (device, &print);
       user_id = fpi_print_generate_user_id (print);
-      user_id_len = strlen (user_id);
-      user_id_len = MIN (DEFAULT_UID_LEN, user_id_len);
+      user_id_len = MIN (DEFAULT_UID_LEN, strlen (user_id));
 
       payload = g_malloc0 (payload_len);
       memcpy (payload, user_id, user_id_len);
-
-      trans_id = g_steal_pointer (&payload);
+      valid_uid = (gchar *) payload;
 
       finger = SUB_FINGER_01;
       uid = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
-                                       user_id,
+                                       valid_uid,
                                        user_id_len,
                                        1);
       data = g_variant_new ("(y@ay)",
@@ -1098,7 +1096,7 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
       fpi_print_set_type (print, FPI_PRINT_RAW);
       fpi_print_set_device_stored (print, TRUE);
       g_object_set (print, "fpi-data", data, NULL);
-      g_object_set (print, "description", user_id, NULL);
+      g_object_set (print, "description", valid_uid, NULL);
 
       g_debug ("user_id: %s, finger: 0x%x", user_id, finger);
 
@@ -1107,7 +1105,8 @@ fp_enroll_sm_run_state (FpiSsm *ssm, FpDevice *device)
       nor_enroll_commit.data_len[1] = GET_LEN_H (payload_len);
 
       cmd_buf = (guint8 *) &nor_enroll_commit;
-      rtk_sensor_bulk_cmd (self, cmd_buf, trans_id, FP_RTK_MSG_DEFAULT, 1, fp_enroll_commit_cb);
+      rtk_sensor_bulk_cmd (self, cmd_buf, g_steal_pointer (&payload),
+                           FP_RTK_MSG_DEFAULT, 1, fp_enroll_commit_cb);
       break;
 
     case FP_RTK_ENROLL_CANCEL_CAPTURE:

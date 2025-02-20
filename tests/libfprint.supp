@@ -26,10 +26,10 @@
 }
 
 {
-   <ignore-bash-leaks>
+   <ignore-libusb-context>
    Memcheck:Leak
-   match-leak-kinds: definite
-   fun:malloc
+   match-leak-kinds: possible
+   fun:calloc
    ...
-   obj:/usr/bin/bash
+   fun:libusb_init_context
 }

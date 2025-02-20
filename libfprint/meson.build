@@ -162,7 +162,7 @@ helper_sources = {
         [ 'drivers/aesx660.c' ],
     'aes3k' :
         [ 'drivers/aes3k.c' ],
-    'nss' :
+    'openssl' :
         [ ],
     'udev' :
         [ ],
@@ -278,8 +278,13 @@ libfprint_drivers = static_library('fprint-drivers',
     link_with: libfprint_private,
     install: false)
 
-mapfile = files('libfprint.ver')
-vflag = '-Wl,--version-script,@0@/@1@'.format(meson.project_source_root(), mapfile[0])
+mapfile = files('libfprint.ver')[0]
+if meson.version().version_compare('>=1.4')
+    mapfile_path = mapfile.full_path()
+else
+    mapfile_path = meson.project_source_root() / '@0@'.format(mapfile)
+endif
+vflag = '-Wl,--version-script,@0@'.format(mapfile_path)
 
 libfprint = shared_library(versioned_libname.split('lib')[1],
     sources: [
@@ -329,6 +334,21 @@ udev_hwdb_generator = custom_target('udev-hwdb',
     capture: true,
     command: [ udev_hwdb ],
     install: false,
+)
+
+metainfo = executable('fprint-list-metainfo',
+    'fprint-list-metainfo.c',
+    dependencies: libfprint_private_dep,
+    link_with: libfprint_drivers,
+    install: false)
+
+metainfo_generator = custom_target('metainfo',
+    output: 'org.freedesktop.libfprint.metainfo.xml',
+    depend_files: drivers_sources,
+    capture: true,
+    command: [ metainfo ],
+    install: true,
+    install_dir: datadir / 'metainfo'
 )
 
 if install_udev_rules

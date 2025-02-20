@@ -140,6 +140,24 @@ class VirtualImage(unittest.TestCase):
         while iterate and ctx.pending():
             ctx.iteration(False)
 
+    def wait_for_finger_status(self, finger_status, timeout=5000):
+        done = False
+        def on_timeout_reached():
+            nonlocal done
+            done = True
+
+        if 'UNDER_VALGRIND' in os.environ:
+            timeout = timeout * 3
+
+        source = GLib.timeout_add(timeout, on_timeout_reached)
+        while not done:
+            if self.dev.get_finger_status() & finger_status:
+                GLib.source_remove(source)
+                return
+            ctx.iteration(True)
+
+        self.assertFalse(done)
+
     def test_features(self):
         self.assertTrue(self.dev.has_feature(FPrint.DeviceFeature.CAPTURE))
         self.assertTrue(self.dev.has_feature(FPrint.DeviceFeature.IDENTIFY))
@@ -204,6 +222,7 @@ class VirtualImage(unittest.TestCase):
         self.dev.enroll(template, None, progress_cb, tuple(), done_cb)
 
         # Note: Assumes 5 enroll steps for this device!
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image(image)
         while self._step < 1:
             ctx.iteration(True)
@@ -262,6 +281,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_match = None
         self._verify_fp = None
         self.dev.verify(fp_whorl, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('whorl')
         while self._verify_match is None:
             ctx.iteration(True)
@@ -271,6 +291,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_match = None
         self._verify_fp = None
         self.dev.verify(fp_whorl, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('tented_arch')
         while self._verify_match is None:
             ctx.iteration(True)
@@ -284,6 +305,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_match = None
         self._verify_fp = None
         self.dev.verify(fp_whorl_tended_arch, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('whorl')
         while self._verify_match is None:
             ctx.iteration(True)
@@ -293,6 +315,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_match = None
         self._verify_fp = None
         self.dev.verify(fp_whorl_tended_arch, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('tented_arch')
         while self._verify_match is None:
             ctx.iteration(True)
@@ -302,6 +325,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_fp = None
         self._verify_error = None
         self.dev.verify(fp_whorl, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_retry()
         while self._verify_fp is None and self._verify_error is None:
             ctx.iteration(True)
@@ -311,6 +335,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_fp = None
         self._verify_error = None
         self.dev.verify(fp_whorl, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_error()
         while self._verify_fp is None and self._verify_error is None:
             ctx.iteration(True)
@@ -334,6 +359,7 @@ class VirtualImage(unittest.TestCase):
 
         self._identify_fp = None
         self.dev.identify([fp_whorl, fp_tented_arch], callback=identify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('tented_arch')
         while self._identify_fp is None:
             ctx.iteration(True)
@@ -341,6 +367,7 @@ class VirtualImage(unittest.TestCase):
 
         self._identify_fp = None
         self.dev.identify([fp_whorl, fp_tented_arch], callback=identify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('whorl')
         while self._identify_fp is None:
             ctx.iteration(True)
@@ -350,6 +377,7 @@ class VirtualImage(unittest.TestCase):
         self._identify_fp = None
         self._identify_error = None
         self.dev.identify([fp_whorl, fp_tented_arch], callback=identify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_retry()
         while self._identify_fp is None and self._identify_error is None:
             ctx.iteration(True)
@@ -393,6 +421,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_match = None
         self._verify_fp = None
         self.dev.verify(fp_whorl_new, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('whorl')
         while self._verify_match is None:
             ctx.iteration(True)
@@ -401,6 +430,7 @@ class VirtualImage(unittest.TestCase):
         self._verify_match = None
         self._verify_fp = None
         self.dev.verify(fp_whorl_new, callback=verify_cb)
+        self.wait_for_finger_status(FPrint.FingerStatusFlags.NEEDED)
         self.send_image('tented_arch')
         while self._verify_match is None:
             ctx.iteration(True)

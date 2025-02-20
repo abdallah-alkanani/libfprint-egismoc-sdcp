@@ -26,6 +26,7 @@
 #include "storage.h"
 
 #include <errno.h>
+#include <glib/gstdio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -53,6 +54,18 @@ get_print_data_descriptor (FpPrint *print, FpDevice *dev, FpFinger finger)
                           driver,
                           dev_id,
                           finger);
+}
+
+static char *
+get_print_prefix_for_device (FpDevice *dev)
+{
+  const char *driver;
+  const char *dev_id;
+
+  driver = fp_device_get_driver (dev);
+  dev_id = fp_device_get_device_id (dev);
+
+  return g_strdup_printf ("%s/%s/", driver, dev_id);
 }
 
 static GVariantDict *
@@ -169,8 +182,6 @@ gallery_data_load (FpDevice *dev)
   g_autoptr(GVariant) dict_variant = NULL;
   g_autofree char *dev_prefix = NULL;
   GPtrArray *gallery;
-  const char *driver;
-  const char *dev_id;
   GVariantIter iter;
   GVariant *value;
   gchar *key;
@@ -178,9 +189,7 @@ gallery_data_load (FpDevice *dev)
   gallery = g_ptr_array_new_with_free_func (g_object_unref);
   dict = load_data ();
   dict_variant = g_variant_dict_end (dict);
-  driver = fp_device_get_driver (dev);
-  dev_id = fp_device_get_device_id (dev);
-  dev_prefix = g_strdup_printf ("%s/%s/", driver, dev_id);
+  dev_prefix = get_print_prefix_for_device (dev);
 
   g_variant_iter_init (&iter, dict_variant);
   while (g_variant_iter_loop (&iter, "{sv}", &key, &value))
@@ -206,6 +215,55 @@ gallery_data_load (FpDevice *dev)
     }
 
   return gallery;
+}
+
+gboolean
+clear_saved_prints (FpDevice *dev,
+                    GError  **error)
+{
+  g_autoptr(GVariantDict) dict = NULL;
+  g_autoptr(GVariantDict) updated_dict = NULL;
+  g_autoptr(GVariant) dict_variant = NULL;
+  g_autofree char *dev_prefix = NULL;
+  GPtrArray *print_keys;
+  GVariantIter iter;
+  GVariant *value;
+  gchar *key;
+
+  print_keys = g_ptr_array_new_with_free_func (g_free);
+  dict = load_data ();
+  dict_variant = g_variant_dict_end (dict);
+  dev_prefix = get_print_prefix_for_device (dev);
+
+  g_variant_iter_init (&iter, dict_variant);
+  while (g_variant_iter_loop (&iter, "{sv}", &key, &value))
+    {
+      if (!g_str_has_prefix (key, dev_prefix))
+        continue;
+
+      g_ptr_array_add (print_keys, g_strdup (key));
+    }
+
+  if (!print_keys->len)
+    return TRUE;
+
+  updated_dict = load_data ();
+
+  for (guint i = 0; i < print_keys->len; ++i)
+    {
+      key = g_ptr_array_index (print_keys, i);
+      if (!g_variant_dict_remove (updated_dict, key))
+        {
+          g_warning ("Print '%s' key not found!", key);
+          continue;
+        }
+
+      g_debug ("Dropping print '%s' from gallery", key);
+    }
+
+  save_data (g_variant_dict_end (updated_dict));
+
+  return TRUE;
 }
 
 FpPrint *

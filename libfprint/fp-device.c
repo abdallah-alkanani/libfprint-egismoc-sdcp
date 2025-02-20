@@ -1103,8 +1103,8 @@ enroll_data_free (FpEnrollData *data)
  * @device: a #FpDevice
  * @template_print: (transfer floating): a #FpPrint
  * @cancellable: (nullable): a #GCancellable, or %NULL
- * @progress_cb: (nullable) (scope notified): progress reporting callback
- * @progress_data: (closure progress_cb): user data for @progress_cb
+ * @progress_cb: (nullable) (closure progress_data) (scope notified): progress reporting callback
+ * @progress_data: user data for @progress_cb
  * @progress_destroy: (destroy progress_data): Destroy notify for @progress_data
  * @callback: (scope async): the function to call on completion
  * @user_data: the data to pass to @callback
@@ -1248,8 +1248,8 @@ match_data_free (FpMatchData *data)
  * @device: a #FpDevice
  * @enrolled_print: a #FpPrint to verify
  * @cancellable: (nullable): a #GCancellable, or %NULL
- * @match_cb: (nullable) (scope notified): match reporting callback
- * @match_data: (closure match_cb): user data for @match_cb
+ * @match_cb: (nullable) (scope notified) (closure match_data): match reporting callback
+ * @match_data: user data for @match_cb
  * @match_destroy: (destroy match_data): Destroy notify for @match_data
  * @callback: the function to call on completion
  * @user_data: the data to pass to @callback
@@ -1374,8 +1374,8 @@ fp_device_verify_finish (FpDevice     *device,
  * @device: a #FpDevice
  * @prints: (element-type FpPrint) (transfer none): #GPtrArray of #FpPrint
  * @cancellable: (nullable): a #GCancellable, or %NULL
- * @match_cb: (nullable) (scope notified): match reporting callback
- * @match_data: (closure match_cb): user data for @match_cb
+ * @match_cb: (nullable) (scope notified) (closure match_data): match reporting callback
+ * @match_data: user data for @match_cb
  * @match_destroy: (destroy match_data): Destroy notify for @match_data
  * @callback: the function to call on completion
  * @user_data: the data to pass to @callback
@@ -1943,8 +1943,8 @@ fp_device_enroll_sync (FpDevice        *device,
  * @device: a #FpDevice
  * @enrolled_print: a #FpPrint to verify
  * @cancellable: (nullable): a #GCancellable, or %NULL
- * @match_cb: (nullable) (scope call): match reporting callback
- * @match_data: (closure match_cb): user data for @match_cb
+ * @match_cb: (nullable) (scope call) (closure match_data): match reporting callback
+ * @match_data: user data for @match_cb
  * @match: (out): Whether the user presented the correct finger
  * @print: (out) (transfer full) (nullable): Location to store the scanned print, or %NULL to ignore
  * @error: Return location for errors, or %NULL to ignore
@@ -1983,8 +1983,8 @@ fp_device_verify_sync (FpDevice     *device,
  * @device: a #FpDevice
  * @prints: (element-type FpPrint) (transfer none): #GPtrArray of #FpPrint
  * @cancellable: (nullable): a #GCancellable, or %NULL
- * @match_cb: (nullable) (scope call): match reporting callback
- * @match_data: (closure match_cb): user data for @match_cb
+ * @match_cb: (nullable) (scope call) (closure match_data): match reporting callback
+ * @match_data: user data for @match_cb
  * @match: (out) (transfer full) (nullable): Location for the matched #FpPrint, or %NULL
  * @print: (out) (transfer full) (nullable): Location for the new #FpPrint, or %NULL
  * @error: Return location for errors, or %NULL to ignore
