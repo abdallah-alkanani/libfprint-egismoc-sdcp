@@ -15,6 +15,11 @@ mapfile = configure_file(input: 'libfprint-tod.ver.in',
     configuration: {
     'tod_soversion' : tod_soversion,
 })
+if meson.version().version_compare('>=1.4')
+    mapfile_path = mapfile.full_path()
+else
+    mapfile_path = meson.project_source_root() / '@0@'.format(mapfile)
+endif
 
 libfprint_tod_private = static_library('fprint-tod-private',
     sources: [
@@ -35,10 +40,17 @@ foreach source: libfprint_private_sources
     tod_sources += '..' / source
 endforeach
 
+tod_symbols = files('tod-symbols.h')[0]
+if meson.version().version_compare('>=1.4')
+    tod_symbols = tod_symbols.full_path()
+else
+    tod_symbols = meson.project_source_root() / '@0@'.format(tod_symbols)
+endif
+
 libfprint_tod = shared_library(versioned_libname.split('lib')[1] + '-tod',
     c_args: [
         '-DTOD_LIBRARY=1',
-        '-include', '@0@'.format(files('tod-symbols.h')[0]),
+        '-include', '@0@'.format(tod_symbols),
     ],
     sources: [
         tod_sources,
@@ -46,7 +58,7 @@ libfprint_tod = shared_library(versioned_libname.split('lib')[1] + '-tod',
     soversion: tod_soversion,
     include_directories: include_directories('..'),
     link_args: [
-        '-Wl,--version-script,@0@'.format(mapfile),
+        '-Wl,--version-script,@0@'.format(mapfile_path),
         '-Wl,--unresolved-symbols=ignore-in-object-files'
     ],
     link_depends: mapfile,

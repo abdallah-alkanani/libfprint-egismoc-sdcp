@@ -419,8 +419,8 @@ if get_option('tod')
     tod_envs.set('FP_VIRTUAL_FAKE_DEVICE', 'yes')
     tod_envs.set('FP_TOD_TEST_DRIVER_NAME', tod_test_driver_name)
     tod_envs.prepend('LD_LIBRARY_PATH',
-        meson.build_root() / 'libfprint',
-        meson.build_root() / 'libfprint' / 'tod')
+        meson.project_build_root() / 'libfprint',
+        meson.project_build_root() / 'libfprint' / 'tod')
     tod_subversion = meson.project_version().split('+tod')[0]
     tod_c_args = [
         '-DTEST_TOD_DRIVER=1',
@@ -594,7 +594,7 @@ if get_option('tod')
     endforeach
 
     if find_program('objdump', required: false).found()
-        check_libs_symbols = find_program(meson.source_root() /
+        check_libs_symbols = find_program(meson.project_source_root() /
             'libfprint/tod/tests/check-library-symbols.sh')
         test('check-tod-lib-sybmbols',
             check_libs_symbols,
