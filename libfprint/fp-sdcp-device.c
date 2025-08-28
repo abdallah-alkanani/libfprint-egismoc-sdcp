@@ -1,6 +1,7 @@
 /*
  * FpSdcpDevice - A base class for SDCP enabled devices
  * Copyright (C) 2020 Benjamin Berg <bberg@redhat.com>
+ * Copyright (C) 2025 Joshua Grisham <josh@joshuagrisham.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -32,15 +33,13 @@
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpSdcpDevice, fp_sdcp_device, FP_TYPE_DEVICE)
 
-#if 0
-/* XXX: We'll very likely want/need some properties on this class. */
 enum {
   PROP_0,
+  PROP_SDCP_DATA,
   N_PROPS
 };
 
 static GParamSpec *properties[N_PROPS];
-#endif
 
 /*******************************************************/
 
@@ -49,13 +48,16 @@ static void
 fp_sdcp_device_open (FpDevice *device)
 {
   FpSdcpDevice *self = FP_SDCP_DEVICE (device);
-  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
-  /* Try a reconnect if we still have the mac secret. */
-  if (priv->mac_secret)
-    fpi_sdcp_device_reconnect (self);
-  else
-    fpi_sdcp_device_connect (self);
+  fpi_sdcp_device_open (self);
+}
+
+static void
+fp_sdcp_device_list (FpDevice *device)
+{
+  FpSdcpDevice *self = FP_SDCP_DEVICE (device);
+
+  fpi_sdcp_device_list (self);
 }
 
 static void
@@ -82,13 +84,12 @@ fp_sdcp_device_finalize (GObject *object)
   FpSdcpDevice *self = (FpSdcpDevice *) object;
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
-  g_clear_pointer (&priv->intermediate_cas, g_ptr_array_unref);
-  g_clear_pointer (&priv->slot, PK11_FreeSlot);
-  g_clear_pointer (&priv->host_key_private, SECKEY_DestroyPrivateKey);
-  g_clear_pointer (&priv->host_key_public, SECKEY_DestroyPublicKey);
-  g_clear_pointer (&priv->master_secret, PK11_FreeSymKey);
-  g_clear_pointer (&priv->mac_secret, PK11_FreeSymKey);
-  g_clear_pointer (&priv->nss_init_context, NSS_ShutdownContext);
+  g_clear_pointer (&priv->host_private_key, g_bytes_unref);
+  g_clear_pointer (&priv->host_public_key, g_bytes_unref);
+  g_clear_pointer (&priv->host_random, g_bytes_unref);
+  g_clear_pointer (&priv->reconnect_random, g_bytes_unref);
+  g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
+  g_clear_pointer (&priv->data, g_variant_unref);
 
   G_OBJECT_CLASS (fp_sdcp_device_parent_class)->finalize (object);
 }
@@ -99,8 +100,36 @@ fp_sdcp_device_get_property (GObject    *object,
                              GValue     *value,
                              GParamSpec *pspec)
 {
+  FpSdcpDevice *self = (FpSdcpDevice *) object;
+  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
+
   switch (prop_id)
     {
+    case PROP_SDCP_DATA:
+      g_value_set_variant (value, priv->data);
+      break;
+
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+    }
+}
+
+static void
+fp_sdcp_device_set_property (GObject      *object,
+                             guint         prop_id,
+                             const GValue *value,
+                             GParamSpec   *pspec)
+{
+  FpSdcpDevice *self = FP_SDCP_DEVICE (object);
+  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
+
+  switch (prop_id)
+    {
+    case PROP_SDCP_DATA:
+      g_clear_pointer (&priv->data, g_variant_unref);
+      priv->data = g_value_dup_variant (value);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
     }
@@ -120,22 +149,30 @@ fp_sdcp_device_class_init (FpSdcpDeviceClass *klass)
 
   object_class->finalize = fp_sdcp_device_finalize;
   object_class->get_property = fp_sdcp_device_get_property;
+  object_class->set_property = fp_sdcp_device_set_property;
   object_class->constructed = fp_sdcp_device_constructed;
 
   fp_device_class->open = fp_sdcp_device_open;
+  fp_device_class->list = fp_sdcp_device_list;
   fp_device_class->enroll = fp_sdcp_device_enroll;
   fp_device_class->verify = fp_sdcp_device_identify;
   fp_device_class->identify = fp_sdcp_device_identify;
 
-#if 0
+  properties[PROP_SDCP_DATA] =
+    g_param_spec_variant ("sdcp-data",
+                          "SDCP Data",
+                          "SDCP-related device data that should be persisted and used with the "
+                          "device during the current system boot",
+                          G_VARIANT_TYPE_ANY,
+                          NULL,
+                          G_PARAM_STATIC_STRINGS | G_PARAM_READWRITE);
+
   g_object_class_install_properties (object_class, N_PROPS, properties);
-#endif
+
+  fpi_device_class_auto_initialize_features (fp_device_class);
 }
 
 static void
 fp_sdcp_device_init (FpSdcpDevice *self)
 {
-  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
-
-  priv->intermediate_cas = g_ptr_array_new_with_free_func ((GDestroyNotify) g_bytes_unref);
 }

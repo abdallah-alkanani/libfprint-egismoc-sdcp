@@ -226,19 +226,24 @@ fpi_image_device_set_bz3_threshold
 <TITLE>Internal FpSdcpDevice</TITLE>
 FpiSdcpClaim
 FpSdcpDeviceClass
-fpi_sdcp_claim_copy
-fpi_sdcp_claim_free
 fpi_sdcp_claim_get_type
 fpi_sdcp_claim_new
-fpi_sdcp_device_connect_complete
+fpi_sdcp_claim_copy
+fpi_sdcp_claim_free
+fpi_sdcp_device_open_complete
 fpi_sdcp_device_get_connect_data
+fpi_sdcp_device_connect_complete
 fpi_sdcp_device_get_reconnect_data
 fpi_sdcp_device_reconnect_complete
+fpi_sdcp_device_list_complete
+fpi_sdcp_device_enroll_commit
 fpi_sdcp_device_enroll_commit_complete
-fpi_sdcp_device_enroll_ready
-fpi_sdcp_device_enroll_set_nonce
+fpi_sdcp_device_get_identify_data
+fpi_sdcp_device_set_identify_data
 fpi_sdcp_device_identify_retry
 fpi_sdcp_device_identify_complete
+fpi_sdcp_device_get_print_id
+fpi_sdcp_device_set_print_id
 </SECTION>
 
 <SECTION>
@@ -249,6 +254,8 @@ fp_warn
 fp_err
 BUG_ON
 BUG
+fp_dbg_hex_dump_bytes
+fp_dbg_hex_dump_gbytes
 </SECTION>
 
 <SECTION>

@@ -1,6 +1,7 @@
 /*
  * FpSdcpDevice - A base class for SDCP enabled devices
  * Copyright (C) 2020 Benjamin Berg <bberg@redhat.com>
+ * Copyright (C) 2025 Joshua Grisham <josh@joshuagrisham.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -20,37 +21,23 @@
 #define FP_COMPONENT "sdcp_device"
 #include "fpi-log.h"
 
-#include <sechash.h>
-#include <cert.h>
-
 #include "fpi-compat.h"
-#include "fp-sdcp-device-private.h"
-#include "fpi-sdcp-device.h"
 #include "fpi-print.h"
+
+#include "fp-sdcp-device-private.h"
+#include "fpi-sdcp.h"
+#include "fpi-sdcp-device.h"
 
 /**
  * SECTION: fpi-sdcp-device
  * @title: Internal FpSdcpDevice
- * @short_description: Internal SDCP Device routines
+ * @short_description: Internal SDCP device routines
  *
  * Internal SDCP handling routines. See #FpSdcpDevice for public routines.
  */
 
 
 G_DEFINE_BOXED_TYPE (FpiSdcpClaim, fpi_sdcp_claim, fpi_sdcp_claim_copy, fpi_sdcp_claim_free)
-
-/*
- * Static, but could be created at runtime using:
- *   oid_data = SECOID_FindOIDByTag (SEC_OID_SECG_EC_SECP256R1);
- *   ec_parameters_der.len = oid_data->oid.len + 2;
- *   ec_parameters_der.data = ec_params_data = g_malloc0 (oid_data->oid.len + 2);
- *   ec_parameters_der.data[0] = SEC_ASN1_OBJECT_ID;
- *   ec_parameters_der.data[1] = oid_data->oid.len;
- */
-const SECItem SDCPECParamsDER = {
-  .len = 10,
-  .data = (guint8[]){ 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07 }
-};
 
 /**
  * fpi_sdcp_claim_new:
@@ -76,16 +63,16 @@ fpi_sdcp_claim_new (void)
  * Release the memory used by an #FpiSdcpClaim.
  */
 void
-fpi_sdcp_claim_free (FpiSdcpClaim * claim)
+fpi_sdcp_claim_free (FpiSdcpClaim *claim)
 {
   g_return_if_fail (claim);
 
-  g_clear_pointer (&claim->cert_m, g_bytes_unref);
-  g_clear_pointer (&claim->pk_d, g_bytes_unref);
-  g_clear_pointer (&claim->pk_f, g_bytes_unref);
-  g_clear_pointer (&claim->h_f, g_bytes_unref);
-  g_clear_pointer (&claim->s_m, g_bytes_unref);
-  g_clear_pointer (&claim->s_d, g_bytes_unref);
+  g_clear_pointer (&claim->model_certificate, g_bytes_unref);
+  g_clear_pointer (&claim->device_public_key, g_bytes_unref);
+  g_clear_pointer (&claim->firmware_public_key, g_bytes_unref);
+  g_clear_pointer (&claim->firmware_hash, g_bytes_unref);
+  g_clear_pointer (&claim->model_signature, g_bytes_unref);
+  g_clear_pointer (&claim->device_signature, g_bytes_unref);
 
   g_free (claim);
 }
@@ -105,46 +92,20 @@ fpi_sdcp_claim_copy (FpiSdcpClaim *other)
 
   res = fpi_sdcp_claim_new ();
 
-  if (other->cert_m)
-    res->cert_m = g_bytes_ref (other->cert_m);
-  if (other->pk_d)
-    res->pk_d = g_bytes_ref (other->pk_d);
-  if (other->pk_f)
-    res->pk_f = g_bytes_ref (other->pk_f);
-  if (other->h_f)
-    res->h_f = g_bytes_ref (other->h_f);
-  if (other->s_m)
-    res->s_m = g_bytes_ref (other->s_m);
-  if (other->s_d)
-    res->s_d = g_bytes_ref (other->s_d);
+  if (other->model_certificate)
+    res->model_certificate = g_bytes_ref (other->model_certificate);
+  if (other->device_public_key)
+    res->device_public_key = g_bytes_ref (other->device_public_key);
+  if (other->firmware_public_key)
+    res->firmware_public_key = g_bytes_ref (other->firmware_public_key);
+  if (other->firmware_hash)
+    res->firmware_hash = g_bytes_ref (other->firmware_hash);
+  if (other->model_signature)
+    res->model_signature = g_bytes_ref (other->model_signature);
+  if (other->device_signature)
+    res->device_signature = g_bytes_ref (other->device_signature);
 
   return res;
-}
-
-static void
-dump_bytes (GBytes *d)
-{
-  g_autoptr(GString) line = NULL;
-  const guint8 *dump_data;
-  gsize dump_len;
-
-  dump_data = g_bytes_get_data (d, &dump_len);
-
-  line = g_string_new ("");
-  /* Dump the buffer. */
-  for (gint i = 0; i < dump_len; i++)
-    {
-      g_string_append_printf (line, "%02x ", dump_data[i]);
-      if ((i + 1) % 16 == 0)
-        {
-          g_debug ("%s", line->str);
-          g_string_set_size (line, 0);
-        }
-    }
-
-  if (line->len)
-    g_debug ("%s", line->str);
-
 }
 
 /* Manually redefine what G_DEFINE_* macro does */
@@ -157,376 +118,146 @@ fp_sdcp_device_get_instance_private (FpSdcpDevice *self)
                             g_type_class_get_instance_private_offset (sdcp_class));
 }
 
-/**
- * fpi_sdcp_generate_random:
- * @buffer: Buffer to place random bytes into
- * @len: Number of bytes to generate
- * @error: Error out
- *
- * Returns: #TRUE on success
- **/
-FP_GNUC_ACCESS (write_only, 1, 2)
-static gboolean
-fpi_sdcp_generate_random (guint8 *buffer, gsize len, GError **error)
-{
-  /* Just use a counter in emulation mode. Not random, but all
-   * we need is something predictable and not repeating immediately.
-   */
-  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") == 0)
-    {
-      static guint8 emulation_rand = 0;
-      gsize i;
-
-      for (i = 0; i < len; i++)
-        {
-          buffer[i] = emulation_rand;
-          emulation_rand += 1;
-        }
-
-      return TRUE;
-    }
-
-  /* Generating random numbers is basic enough to assume it works */
-  if (PK11_GenerateRandom (buffer, len) != SECSuccess)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                   "Error generating random numbers using NSS!"));
-      return FALSE;
-    }
-
-  return TRUE;
-}
-
-/**
- * fpi_sdcp_kdf:
- * @self: The #FpSdcpDevice
- * @baseKey: The key to base it on
- * @data_a: (nullable): First data segment to concatenate
- * @data_b: (nullable): Second data segment to concatenate
- * @out_key_2: (nullable) (out): Second output key or %NULL.
- * @error: (out): #GError in case the return value is %NULL
- *
- * Convenience function to calculate a KDF with a specific label
- * and up to two data segments that are concatinated. The returned
- * keys will be 32bytes (256bit) in length. If @out_key_2 is set
- * then two keys will be generated.
- *
- * Returns: A new #PK11SymKey of length @bitlength
- **/
-static PK11SymKey *
-fpi_sdcp_kdf (FpSdcpDevice *self,
-              PK11SymKey   *baseKey,
-              const gchar  *label,
-              GBytes       *data_a,
-              GBytes       *data_b,
-              PK11SymKey  **out_key_2,
-              GError      **error)
-{
-  PK11SymKey * res = NULL;
-  CK_SP800_108_KDF_PARAMS kdf_params;
-  CK_SP800_108_COUNTER_FORMAT counter_format;
-  CK_SP800_108_DKM_LENGTH_FORMAT length_format;
-  CK_DERIVED_KEY additional_key;
-  CK_ATTRIBUTE additional_key_attrs[2];
-  CK_ULONG attr_type, attr_len;
-  CK_OBJECT_HANDLE out_key_handle = 0;
-  CK_PRF_DATA_PARAM data_param[5];
-  SECItem params;
-
-  kdf_params.prfType = CKM_SHA256_HMAC;
-  kdf_params.pDataParams = data_param;
-
-  /* First item is the counter */
-  counter_format.bLittleEndian = FALSE;
-  counter_format.ulWidthInBits = 32;
-  data_param[0].type = CK_SP800_108_ITERATION_VARIABLE;
-  data_param[0].pValue = &counter_format;
-  data_param[0].ulValueLen = sizeof (counter_format);
-  kdf_params.ulNumberOfDataParams = 1;
-
-  /* Then the label */
-  data_param[kdf_params.ulNumberOfDataParams].type = CK_SP800_108_BYTE_ARRAY;
-  data_param[kdf_params.ulNumberOfDataParams].pValue = (guint8 *) label;
-  data_param[kdf_params.ulNumberOfDataParams].ulValueLen = strlen (label) + 1;
-  kdf_params.ulNumberOfDataParams += 1;
-
-  /* Then the context a */
-  if (data_a)
-    {
-      data_param[kdf_params.ulNumberOfDataParams].type = CK_SP800_108_BYTE_ARRAY;
-      data_param[kdf_params.ulNumberOfDataParams].pValue = (guint8 *) g_bytes_get_data (data_a, NULL);
-      data_param[kdf_params.ulNumberOfDataParams].ulValueLen = g_bytes_get_size (data_a);
-      kdf_params.ulNumberOfDataParams += 1;
-    }
-
-  /* Then the context b */
-  if (data_b)
-    {
-      data_param[kdf_params.ulNumberOfDataParams].type = CK_SP800_108_BYTE_ARRAY;
-      data_param[kdf_params.ulNumberOfDataParams].pValue = (guint8 *) g_bytes_get_data (data_b, NULL);
-      data_param[kdf_params.ulNumberOfDataParams].ulValueLen = g_bytes_get_size (data_b);
-      kdf_params.ulNumberOfDataParams += 1;
-    }
-
-  /* And the output length */
-  length_format.dkmLengthMethod = CK_SP800_108_DKM_LENGTH_SUM_OF_KEYS;
-  length_format.bLittleEndian = FALSE;
-  length_format.ulWidthInBits = 32;
-  data_param[kdf_params.ulNumberOfDataParams].type = CK_SP800_108_DKM_LENGTH;
-  data_param[kdf_params.ulNumberOfDataParams].pValue = &length_format;
-  data_param[kdf_params.ulNumberOfDataParams].ulValueLen = sizeof (length_format);
-  kdf_params.ulNumberOfDataParams += 1;
-
-  kdf_params.ulAdditionalDerivedKeys = 0;
-  kdf_params.pAdditionalDerivedKeys = NULL;
-  if (out_key_2)
-    {
-      attr_type = CKK_SHA256_HMAC;
-      attr_len = 256 / 8;
-      additional_key_attrs[0].type = CKA_KEY_TYPE;
-      additional_key_attrs[0].pValue = &attr_type;
-      additional_key_attrs[0].ulValueLen = sizeof (attr_type);
-      additional_key_attrs[1].type = CKA_VALUE_LEN;
-      additional_key_attrs[1].pValue = &attr_len;
-      additional_key_attrs[1].ulValueLen = sizeof (attr_len);
-
-      additional_key.pTemplate = additional_key_attrs;
-      additional_key.ulAttributeCount = 2;
-      additional_key.phKey = &out_key_handle;
-
-      kdf_params.ulAdditionalDerivedKeys = 1;
-      kdf_params.pAdditionalDerivedKeys = &additional_key;
-    }
-
-  params.len = sizeof (kdf_params);
-  params.data = (guint8 *) &kdf_params;
-  res = PK11_Derive (baseKey,
-                     CKM_SP800_108_COUNTER_KDF,
-                     &params,
-                     CKM_SHA256_HMAC,
-                     CKA_SIGN,
-                     256 / 8);
-  if (!res)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                   "Error deriving secret (label: %s): %d",
-                                                   label,
-                                                   PORT_GetError ()));
-    }
-
-  if (out_key_2)
-    *out_key_2 = PK11_SymKeyFromHandle (PK11_GetSlotFromKey (baseKey), res, CKO_DATA, CKM_NULL, out_key_handle, FALSE, NULL);
-
-  return res;
-}
-
-/**
- * fpi_sdcp_mac:
- * @self: The #FpSdcpDevice
- * @baseKey: The key to base it on
- * @data_a: (nullable): Data segment a to concatenate
- * @data_b: (nullable): Data segment b to concatenate
- * @error: (out): #GError in case the return value is %NULL
- *
- * Convenience function to calculate a MAC with a specific label
- * and a generic data segments that is concatenated.
- *
- * Returns: A new #PK11SymKey
- **/
-static GBytes *
-fpi_sdcp_mac (FpSdcpDevice *self,
-              const gchar  *label,
-              GBytes       *data_a,
-              GBytes       *data_b,
-              GError      **error)
-{
-  g_autoptr(GBytes) res = NULL;
-  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
-  SECStatus r;
-  SECItem input, output;
-  g_autofree guint8 *data = NULL;
-  gsize label_len;
-  gsize data_a_len = 0;
-  gsize data_b_len = 0;
-  gsize length;
-
-  label_len = strlen (label) + 1;
-  length = label_len;
-  if (data_a)
-    data_a_len = g_bytes_get_size (data_a);
-  if (data_b)
-    data_b_len = g_bytes_get_size (data_b);
-
-  length += data_a_len + data_b_len;
-
-  data = g_malloc (length);
-
-  memcpy (data, label, label_len);
-  if (data_a)
-    memcpy (data + label_len, g_bytes_get_data (data_a, NULL), data_a_len);
-  if (data_b)
-    memcpy (data + label_len + data_a_len, g_bytes_get_data (data_b, NULL), data_b_len);
-
-  input.len = length;
-  input.data = data;
-  output.len = 32;
-  output.data = g_malloc0 (32);
-  res = g_bytes_new_take (output.data, output.len);
-
-  r = PK11_SignWithSymKey (priv->mac_secret,
-                           CKM_SHA256_HMAC,
-                           NULL,
-                           &output,
-                           &input);
-  if (r != SECSuccess)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                   "Error calculating MAC (label: %s): %d",
-                                                   label,
-                                                   r));
-    }
-
-  return g_steal_pointer (&res);
-}
+/* Example values from Microsoft's SDCP documentation to use when testing (FP_DEVICE_EMULATION=1) */
+static const guchar test_host_private_key[] = {
+  0x84, 0x00, 0xed, 0x14, 0x57, 0x9c, 0xdf, 0x11, 0x58, 0x64, 0x77, 0xe8, 0x36, 0xe8, 0xcb, 0x52,
+  0x70, 0x84, 0x41, 0xc1, 0xc2, 0xa4, 0x47, 0xc2, 0x18, 0xc5, 0xbb, 0xc2, 0xd1, 0x18, 0xfb, 0xc7
+};
+static const guchar test_host_public_key[] = {
+  0x04, 0x52, 0xf0, 0x56, 0xff, 0xb9, 0xc6, 0x72, 0x86, 0x54, 0x77, 0x1a, 0x36, 0x29, 0xb7, 0x70,
+  0x76, 0x7b, 0x19, 0xa2, 0x10, 0x6a, 0x49, 0x16, 0xfb, 0x81, 0xba, 0x06, 0xef, 0x67, 0x97, 0xc4,
+  0xa3, 0xdf, 0x67, 0x2a, 0xde, 0x0e, 0x91, 0x16, 0xd1, 0xab, 0xe2, 0x78, 0xa8, 0x22, 0x3a, 0xbd,
+  0xe4, 0x95, 0x8d, 0x62, 0xd4, 0xff, 0x68, 0x82, 0x15, 0x9f, 0x06, 0x17, 0xc6, 0xf8, 0xce, 0x10,
+  0xbf
+};
+static const gchar test_host_random[] = {
+  0xd8, 0x77, 0x40, 0x3a, 0xbe, 0x82, 0xf4, 0xd9, 0x7e, 0x14, 0x48, 0xc5, 0x05, 0x2d, 0x83, 0xa5,
+  0x32, 0xa4, 0x5e, 0x56, 0xef, 0x04, 0x9c, 0xbb, 0xf9, 0x81, 0x13, 0x75, 0x20, 0xe7, 0x13, 0xbf
+};
+static const gchar test_reconnect_random[] = {
+  0x8a, 0x74, 0x51, 0xc1, 0xd3, 0xa8, 0xdc, 0xa1, 0xc1, 0x33, 0x0c, 0xa5, 0x0d, 0x73, 0x45, 0x4b,
+  0x35, 0x1a, 0x49, 0xf4, 0x6c, 0x8e, 0x9d, 0xce, 0xe1, 0x5c, 0x96, 0x4d, 0x29, 0x5c, 0x31, 0xc9
+};
+static const gchar test_identify_nonce[] = {
+  0x3a, 0x1b, 0x50, 0x6f, 0x5b, 0xec, 0x08, 0x90, 0x59, 0xac, 0xef, 0xb9, 0xb4, 0x4d, 0xfb, 0xde,
+  0xa7, 0xa5, 0x99, 0xee, 0x9a, 0xa2, 0x67, 0xe5, 0x25, 0x26, 0x64, 0xd6, 0x0b, 0x79, 0x80, 0x53
+};
 
 /* FpiSdcpDevice */
 
 /* Internal functions of FpSdcpDevice */
+
+void
+fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,
+                                        GBytes      **application_secret)
+{
+  g_autoptr(GVariant) data = NULL;
+  g_autoptr(GVariant) application_secret_var = NULL;
+  const guint8 *application_secret_data;
+  gsize application_secret_len = 0;
+
+  g_return_if_fail (*application_secret == NULL);
+
+  g_object_get (G_OBJECT (self), "sdcp-data", &data, NULL);
+
+  if (!data)
+    return;
+
+  if (!g_variant_check_format_string (data, "(@ay)", FALSE))
+    {
+      fp_warn ("SDCP data is not in expected format.");
+      return;
+    }
+
+  g_variant_get (data, "(@ay)", &application_secret_var);
+
+  application_secret_data = g_variant_get_fixed_array (application_secret_var,
+                                                       &application_secret_len,
+                                                       sizeof (guint8));
+
+  *application_secret = g_bytes_new (application_secret_data, application_secret_len);
+}
+
+void
+fpi_sdcp_device_set_application_secret (FpSdcpDevice *self,
+                                        GBytes       *application_secret)
+{
+  GVariant *application_secret_var;
+  GVariant *data;
+
+  g_return_if_fail (application_secret);
+
+  application_secret_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
+                                                      g_bytes_get_data (application_secret, NULL),
+                                                      g_bytes_get_size (application_secret),
+                                                      sizeof (guint8));
+  data = g_variant_new ("(@ay)", application_secret_var);
+
+  g_object_set (G_OBJECT (self), "sdcp-data", data, NULL);
+}
+
+void
+fpi_sdcp_device_unset_application_secret (FpSdcpDevice *self)
+{
+  g_object_set (G_OBJECT (self), "sdcp-data", NULL);
+}
+
+void
+fpi_sdcp_device_open (FpSdcpDevice *self)
+{
+  FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+
+  g_return_if_fail (FP_IS_SDCP_DEVICE (self));
+  g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_OPEN);
+
+  cls->open (self);
+}
+
 void
 fpi_sdcp_device_connect (FpSdcpDevice *self)
 {
-  G_GNUC_UNUSED g_autofree void * ec_params_data = NULL;
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
   GError *error = NULL;
 
-  SECStatus r = SECSuccess;
+  g_clear_pointer (&priv->host_private_key, g_bytes_unref);
+  g_clear_pointer (&priv->host_public_key, g_bytes_unref);
+  g_clear_pointer (&priv->host_random, g_bytes_unref);
 
-  /* Disable loading p11-kit's user configuration */
-  g_setenv ("P11_KIT_NO_USER_CONFIG", "1", TRUE);
-
-  /* Initialise NSS; Same as NSS_NoDB_Init but using a context. */
-  if (!priv->nss_init_context)
+  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
     {
-      priv->nss_init_context = NSS_InitContext ("", "", "", "", NULL,
-                                                NSS_INIT_READONLY |
-                                                NSS_INIT_NOCERTDB |
-                                                NSS_INIT_NOMODDB |
-                                                NSS_INIT_FORCEOPEN |
-                                                NSS_INIT_NOROOTINIT |
-                                                NSS_INIT_OPTIMIZESPACE);
-    }
-  if (!priv->nss_init_context)
-    goto nss_error;
-
-  g_clear_pointer (&priv->slot, PK11_FreeSlot);
-  g_clear_pointer (&priv->host_key_private, SECKEY_DestroyPrivateKey);
-  g_clear_pointer (&priv->host_key_public, SECKEY_DestroyPublicKey);
-  priv->host_key_private = NULL;
-
-  /* SDCP Connect: 3.i. Generate an ephemeral ECDH key pair */
-  /* Look up the OID data for our curve. */
-
-  /* Just use a counter in emulation mode. Not random, but all
-   * we need is something predictable and not repeating immediately.
-   */
-  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") == 0)
-    {
-      /* To generate, use the #if 0 code below and remove the readOnly flag */
-      priv->slot = SECMOD_OpenUserDB ("configdir='sdcp-key-db' tokenDescription='libfprint CI testing' flags=readOnly");
-      if (!priv->slot)
+      /* SDCP Connect: 3.i. Generate host ephemeral ECDH key pair */
+      fpi_sdcp_generate_host_key (&priv->host_private_key, &priv->host_public_key, &error);
+      if (error)
         {
-          g_message ("Could not open key DB for testing");
-          exit (77);
+          fpi_sdcp_device_connect_complete (self,
+                                            NULL, NULL, NULL,
+                                            error);
+          return;
         }
 
-#if 0
-      if (PK11_NeedUserInit (priv->slot))
-        if (PK11_InitPin (priv->slot, "", "") != SECSuccess)
-          goto nss_error;
-
-      if (priv->slot == NULL)
-        goto nss_error;
-      g_debug ("logged in: %i, need: %i", PK11_IsLoggedIn (priv->slot, NULL), PK11_NeedLogin (priv->slot));
-      g_debug ("read only: %i", PK11_IsReadOnly (priv->slot));
-      g_debug ("need user init: %i", PK11_NeedUserInit (priv->slot));
-      //PK11_SetPasswordFunc (pwfunc);
-
-      /* SDCP Connect: 3.i. Generate an ephemeral ECDH key pair */
-      /* Look up the OID data for our curve. */
-      oid_data = SECOID_FindOIDByTag (SEC_OID_SECG_EC_SECP256R1);
-      if (!oid_data)
-        goto nss_error;
-
-      priv->host_key_private = PK11_GenerateKeyPair (priv->slot, CKM_EC_KEY_PAIR_GEN,
-                                                     (SECItem *) &SDCPECParamsDER,
-                                                     &priv->host_key_public,
-                                                     TRUE, FALSE,
-                                                     NULL);
-
-      PK11_SetPrivateKeyNickname (priv->host_key_private, "CI testing");
-      PK11_SetPublicKeyNickname (priv->host_key_public, "CI testing");
-#else
-
-      g_assert (!PK11_NeedUserInit (priv->slot));
-      g_assert (PK11_IsReadOnly (priv->slot));
-
-      SECKEYPrivateKeyList *priv_key_list = NULL;
-      SECKEYPublicKeyList *pub_key_list = NULL;
-
-      priv_key_list = PK11_ListPrivKeysInSlot (priv->slot, (char *) "CI testing", NULL);
-      pub_key_list = PK11_ListPublicKeysInSlot (priv->slot, (char *) "CI testing");
-      g_assert (priv_key_list != NULL && pub_key_list != NULL);
-      g_assert (!PR_CLIST_IS_EMPTY (&priv_key_list->list) && !PR_CLIST_IS_EMPTY (&pub_key_list->list));
-
-      priv->host_key_private = SECKEY_CopyPrivateKey (((SECKEYPrivateKeyListNode *) PR_LIST_HEAD (&priv_key_list->list))->key);
-      priv->host_key_public = SECKEY_CopyPublicKey (((SECKEYPublicKeyListNode *) PR_LIST_HEAD (&pub_key_list->list))->key);
-
-      SECKEY_DestroyPrivateKeyList (priv_key_list);
-      SECKEY_DestroyPublicKeyList (pub_key_list);
-#endif
+      /* SDCP Connect: 3.ii. Generate host random */
+      priv->host_random = fpi_sdcp_generate_random (&error);
+      if (error)
+        {
+          fpi_sdcp_device_connect_complete (self,
+                                            NULL, NULL, NULL,
+                                            error);
+          return;
+        }
     }
   else
     {
-      /* Create a slot for PK11 operation */
-      priv->slot = PK11_GetBestSlot (CKM_EC_KEY_PAIR_GEN, NULL);
-      if (priv->slot == NULL)
-        goto nss_error;
-
-      priv->host_key_private = PK11_GenerateKeyPair (priv->slot, CKM_EC_KEY_PAIR_GEN,
-                                                     (SECItem *) &SDCPECParamsDER,
-                                                     &priv->host_key_public,
-                                                     FALSE, TRUE,
-                                                     NULL);
-    }
-
-  if (r != SECSuccess)
-    goto nss_error;
-
-  /* SDCP Connect: 3.ii. Generate  host random */
-  if (!fpi_sdcp_generate_random (priv->host_random, sizeof (priv->host_random), &error))
-    {
-      fpi_sdcp_device_connect_complete (self,
-                                        NULL, NULL, NULL,
-                                        error);
-      return;
+      /* Use Microsoft's SDCP documentation example values in emulation mode */
+      priv->host_private_key = g_bytes_new (test_host_private_key, sizeof (test_host_private_key));
+      priv->host_public_key = g_bytes_new (test_host_public_key, sizeof (test_host_public_key));
+      priv->host_random = g_bytes_new (test_host_random, sizeof (test_host_random));
     }
 
   /* SDCP Connect: 3.iii. Send the Connect message */
   cls->connect (self);
 
   return;
-
-nss_error:
-  if (r == SECSuccess)
-    r = PORT_GetError ();
-  fpi_sdcp_device_connect_complete (self,
-                                    NULL, NULL, NULL,
-                                    fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                              "Error calling NSS crypto routine: %d", r));
 }
 
 void
@@ -536,11 +267,22 @@ fpi_sdcp_device_reconnect (FpSdcpDevice *self)
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
   GError *error = NULL;
 
-  /* SDCP Reconnect: 2.i. Generate host random */
-  if (!fpi_sdcp_generate_random (priv->host_random, sizeof (priv->host_random), &error))
+  g_clear_pointer (&priv->reconnect_random, g_bytes_unref);
+
+  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
     {
-      fpi_sdcp_device_reconnect_complete (self, NULL, error);
-      return;
+      /* SDCP Reconnect: 2.i. Generate host random */
+      priv->reconnect_random = fpi_sdcp_generate_random (&error);
+      if (error)
+        {
+          fpi_sdcp_device_reconnect_complete (self, NULL, error);
+          return;
+        }
+    }
+  else
+    {
+      /* Use Microsoft's SDCP documentation example value in emulation mode */
+      priv->reconnect_random = g_bytes_new (test_reconnect_random, sizeof (test_reconnect_random));
     }
 
   /* SDCP Reconnect: 2.ii. Send the Reconnect message */
@@ -548,6 +290,17 @@ fpi_sdcp_device_reconnect (FpSdcpDevice *self)
     cls->reconnect (self);
   else
     fpi_sdcp_device_connect (self);
+}
+
+void
+fpi_sdcp_device_list (FpSdcpDevice *self)
+{
+  FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+
+  g_return_if_fail (FP_IS_SDCP_DEVICE (self));
+  g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_LIST);
+
+  cls->list (self);
 }
 
 void
@@ -567,7 +320,7 @@ fpi_sdcp_device_enroll (FpSdcpDevice *self)
   /* For enrollment, all we need to do is start the process. But just to be sure,
    * clear a bit of internal state.
    */
-  cls->enroll_begin (self);
+  cls->enroll (self);
 }
 
 void
@@ -583,11 +336,22 @@ fpi_sdcp_device_identify (FpSdcpDevice *self)
 
   g_return_if_fail (action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_VERIFY);
 
-  /* Generate a new nonce. */
-  if (!fpi_sdcp_generate_random (priv->host_random, sizeof (priv->host_random), &error))
+  g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
+
+  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
     {
-      fpi_device_action_error (FP_DEVICE (self), error);
-      return;
+      /* Generate a new nonce. */
+      priv->identify_nonce = fpi_sdcp_generate_random (&error);
+      if (error)
+        {
+          fpi_device_action_error (FP_DEVICE (self), error);
+          return;
+        }
+    }
+  else
+    {
+      /* Use Microsoft's SDCP documentation example value in emulation mode */
+      priv->identify_nonce = g_bytes_new (test_identify_nonce, sizeof (test_identify_nonce));
     }
 
   cls->identify (self);
@@ -597,72 +361,93 @@ fpi_sdcp_device_identify (FpSdcpDevice *self)
 /* Private API */
 
 /**
- * fp_sdcp_device_set_intermediate_cas:
- * @self: The #FpSdcpDevice
- * @ca_1: (transfer none): DER encoded intermediate CA certificate #1
- * @ca_2: (transfer none): DER encoded intermediate CA certificate #2
+ * fpi_sdcp_device_open_complete:
+ * @self: a #FpSdcpDevice fingerprint device
+ * @error: A #GError or %NULL on success
  *
- * Set the intermediate CAs used by the device.
+ * Reports completion of open operation. Responsible for triggering SDCP connect
+ * or reconnect as necessary.
  */
 void
-fpi_sdcp_device_set_intermediat_cas (FpSdcpDevice *self,
-                                     GBytes       *ca_1,
-                                     GBytes       *ca_2)
+fpi_sdcp_device_open_complete (FpSdcpDevice *self,
+                               GError       *error)
 {
-  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
+  FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
 
-  g_ptr_array_set_size (priv->intermediate_cas, 0);
-  if (ca_1)
-    g_ptr_array_add (priv->intermediate_cas, g_bytes_ref (ca_1));
-  if (ca_2)
-    g_ptr_array_add (priv->intermediate_cas, g_bytes_ref (ca_2));
+  g_autoptr(GBytes) application_secret = NULL;
+
+  if (!error)
+    {
+      fpi_sdcp_device_get_application_secret (self, &application_secret);
+
+      /* Try a reconnect if implemented and we already have an application_secret */
+      if (cls->reconnect && application_secret)
+        fpi_sdcp_device_reconnect (self);
+
+      /* Connect if we don't already have an application_secret */
+      else if (!application_secret)
+        fpi_sdcp_device_connect (self);
+
+      /* Complete open if we are already connected */
+      else
+        fpi_device_open_complete (FP_DEVICE (self), NULL);
+    }
+  else
+    {
+      fpi_device_open_complete (FP_DEVICE (self), error);
+    }
 }
 
-/* FIXME: This is (transfer full), but other getters have (transfer none)
-*        for drivers. Kind of inconsistent, but it is convenient here. */
 /**
  * fp_sdcp_device_get_connect_data:
- * @r_h: (out) (transfer full): The host random
- * @pk_h: (out) (transfer full): The host public key
+ * @self: a #FpSdcpDevice fingerprint device
+ * @host_random: (out) (transfer full): The host-generated random
+ * @host_public_key: (out) (transfer full): The host public key
  *
  * Get data required to connect to (i.e. open) the device securely.
  */
 void
 fpi_sdcp_device_get_connect_data (FpSdcpDevice *self,
-                                  GBytes      **r_h,
-                                  GBytes      **pk_h)
+                                  GBytes      **host_random,
+                                  GBytes      **host_public_key)
 {
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
-  g_return_if_fail (r_h != NULL);
-  g_return_if_fail (pk_h != NULL);
+  g_return_if_fail (host_random != NULL);
+  g_return_if_fail (host_public_key != NULL);
+  g_return_if_fail (priv->host_random);
+  g_return_if_fail (priv->host_public_key);
 
-  *r_h = g_bytes_new (priv->host_random, sizeof (priv->host_random));
-
-  g_assert (priv->host_key_public->u.ec.publicValue.len == 65);
-  *pk_h = g_bytes_new (priv->host_key_public->u.ec.publicValue.data, priv->host_key_public->u.ec.publicValue.len);
+  *host_random = g_bytes_new_from_bytes (priv->host_random, 0,
+                                         g_bytes_get_size (priv->host_random));
+  *host_public_key = g_bytes_new_from_bytes (priv->host_public_key, 0,
+                                             g_bytes_get_size (priv->host_public_key));
 }
 
 /**
  * fp_sdcp_device_get_reconnect_data:
- * @r_h: (out) (transfer full): The host random
+ * @self: a #FpSdcpDevice fingerprint device
+ * @reconnect_random: (out) (transfer full): The host-generated random
  *
  * Get data required to reconnect to (i.e. open) to the device securely.
  */
 void
 fpi_sdcp_device_get_reconnect_data (FpSdcpDevice *self,
-                                    GBytes      **r_h)
+                                    GBytes      **reconnect_random)
 {
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
-  g_return_if_fail (r_h != NULL);
+  g_return_if_fail (reconnect_random != NULL);
+  g_return_if_fail (priv->reconnect_random);
 
-  *r_h = g_bytes_new (priv->host_random, sizeof (priv->host_random));
+  *reconnect_random = g_bytes_new_from_bytes (priv->reconnect_random, 0,
+                                              g_bytes_get_size (priv->reconnect_random));
 }
 
 /**
  * fp_sdcp_device_get_identify_data:
- * @r_h: (out) (transfer full): The host random
+ * @self: a #FpSdcpDevice fingerprint device
+ * @nonce: (out) (transfer full): A new host-generated nonce
  *
  * Get data required to identify a new print.
  */
@@ -673,420 +458,124 @@ fpi_sdcp_device_get_identify_data (FpSdcpDevice *self,
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
   g_return_if_fail (nonce != NULL);
+  g_return_if_fail (priv->identify_nonce);
 
-  *nonce = g_bytes_new (priv->host_random, sizeof (priv->host_random));
+  *nonce = g_bytes_new_from_bytes (priv->identify_nonce, 0,
+                                   g_bytes_get_size (priv->identify_nonce));
 }
 
-/* Returns the certificates public key after validation. */
-static SECKEYPublicKey *
-fpi_sdcp_validate_cert (FpSdcpDevice *self,
-                        FpiSdcpClaim *claim,
-                        GError      **error)
+/**
+ * fp_sdcp_device_set_identify_data:
+ * @self: a #FpSdcpDevice fingerprint device
+ * @nonce: A driver-specified nonce
+ *
+ * Sets data required to identify a new print.
+ *
+ * Most drivers should not use this function, but instead use the automatically
+ * generated values retrieved from fpi_sdcp_device_get_identify_data() when
+ * executing the device-specific Identify command.
+ *
+ * In cases where a device's Identify command does not accept a randomly
+ * generated nonce, this function can be used to override the randomly generated
+ * nonce to the nonce that was actually sent to the device.
+ */
+void
+fpi_sdcp_device_set_identify_data (FpSdcpDevice *self,
+                                   GBytes       *nonce)
 {
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
-  CERTValInParam in_params[1] = { 0, };
-  CERTValOutParam out_params[2] = { 0, };
-  const void *cert_m_data;
-  gsize cert_m_length;
-  CERTCertDBHandle *cert_db = NULL;
-  CERTCertificate *cert_m = NULL;
 
-  g_autoptr(GPtrArray) intermediate_cas = NULL;
-  PLArenaPool *res_arena = NULL;
-  SECKEYPublicKey *res = NULL;
-  SECStatus r;
-  gint i;
+  g_return_if_fail (nonce != NULL);
 
-  g_debug ("cert_m:");
-  dump_bytes (claim->cert_m);
-  cert_m_data = g_bytes_get_data (claim->cert_m, &cert_m_length);
-  cert_m = CERT_DecodeCertFromPackage ((char *) cert_m_data, cert_m_length);
-  if (!cert_m)
-    {
-      /* So, the MS test client we use for the virtual-sdcp driver does not return
-       * a certificate (yeah ... why?). This special case is purely for testing
-       * purposes and should be removed by fixing the test client!
-       */
-      if (g_str_equal (fp_device_get_driver (FP_DEVICE (self)), "virtual_sdcp") && cert_m_length == 65)
-        {
-          /* Create a new public key directly from the buffer rather than from the certificate. */
-          res_arena = PORT_NewArena (DER_DEFAULT_CHUNKSIZE);
-          g_assert (res_arena);
+  g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
 
-          res = (SECKEYPublicKey *) PORT_ArenaZAlloc (res_arena, sizeof (SECKEYPublicKey));
-          g_assert (res);
-
-          res->arena = res_arena;
-          res->pkcs11Slot = 0;
-          res->pkcs11ID = CK_INVALID_HANDLE;
-
-          res->keyType = ecKey;
-          res->u.ec.DEREncodedParams = SDCPECParamsDER;
-          res->u.ec.publicValue.len = 65;
-          res->u.ec.publicValue.data = (guint8 *) PORT_ArenaAlloc (res->arena, 65);
-          memcpy (res->u.ec.publicValue.data, cert_m_data, 65);
-
-          goto out;
-        }
-
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                   "Failed to read cert_m: %d", PORT_GetError ()));
-      goto out;
-    }
-
-#if 0
-  /* The following code would be a better way of specifying the intermediate CAs
-   * (instead of inserting them into the certificate store), but it does not
-   * work because the feature has simply not been implemented in PKIX.
-   * The code here is left purely as a reference and warning.
-   */
-  CERTCertList *intermediate_cas = NULL;
-
-  /* Setup list for the intermediate CAs. */
-  intermediate_cas = CERT_NewCertList ();
-  for (i = 0; i < priv->intermediate_cas->len; i++)
-    {
-      CERTCertificate *cert = NULL;
-      const void *data;
-      gsize length;
-
-      data = g_bytes_get_data ((GBytes *) g_ptr_array_index (priv->intermediate_cas, i),
-                               &length);
-      cert = CERT_DecodeCertFromPackage ((char *) data, length);
-      if (!cert)
-        {
-          g_propagate_error (error,
-                             fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                       "Failed to read intermediate cert: %d", PORT_GetError ()));
-          goto out;
-        }
-      /* Adding takes the reference. */
-      r = CERT_AddCertToListTail (intermediate_cas, cert);
-
-      if (r != SECSuccess)
-        {
-          g_propagate_error (error,
-                             fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                       "Failed to add cert to cert list: %d", r));
-          goto out;
-        }
-    }
-#endif
-
-  /* Import intermediate certificates into cert DB. */
-  cert_db = CERT_GetDefaultCertDB ();
-  if (!cert_db)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                   "No default certificate DB!"));
-      goto out;
-    }
-
-  intermediate_cas = g_ptr_array_new_full (priv->intermediate_cas->len, g_free);
-  for (i = 0; i < priv->intermediate_cas->len; i++)
-    {
-      gsize length;
-      SECItem *item = NULL;
-
-      item = g_new0 (SECItem, 1);
-      item->type = siDERCertBuffer;
-      item->data = (guint8 *) g_bytes_get_data ((GBytes *) g_ptr_array_index (priv->intermediate_cas, i),
-                                                &length);
-      item->len = length;
-      g_ptr_array_add (intermediate_cas, item);
-    }
-  r = CERT_ImportCerts (cert_db, certUsageVerifyCA,
-                        intermediate_cas->len, (SECItem **) intermediate_cas->pdata,
-                        NULL,
-                        FALSE, FALSE, NULL);
-  if (r != SECSuccess)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                   "Failed to import intermediate CAs: %d", PORT_GetError ()));
-      goto out;
-    }
-
-  /* We assume we have the root CA in the system store already. */
-  in_params[0].type = cert_pi_end;
-
-  out_params[0].type = cert_po_end; // cert_po_errorLog;
-  out_params[0].value.pointer.log = NULL;
-  out_params[1].type = cert_po_end;
-
-  r = CERT_PKIXVerifyCert (cert_m,
-                           certUsageAnyCA, /* XXX: is this correct? */
-                           in_params,
-                           out_params,
-                           NULL);
-  if (r != SECSuccess)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                   "Failed to verify device certificate: %d", PORT_GetError ()));
-      goto out;
-    }
-
-  /* All seems good, extract the public key in order to return it. */
-  res = CERT_ExtractPublicKey (cert_m);
-  if (!res)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                   "Failed to extract public key from certificate: %d", PORT_GetError ()));
-      goto out;
-    }
-
-out:
-  g_clear_pointer (&cert_m, CERT_DestroyCertificate);
-  if (out_params[0].value.pointer.log)
-    PORT_FreeArena (out_params[0].value.pointer.log->arena, FALSE);
-  return res;
+  priv->identify_nonce = g_steal_pointer (&nonce);
 }
 
-/* FIXME: How to provide intermediate CAs provided? Same call or separate channel? */
 /**
  * fpi_sdcp_device_connect_complete:
  * @self: a #FpSdcpDevice fingerprint device
- * @r_d: The device random nonce
+ * @device_random: The device random
  * @claim: The device #FpiSdcpClaim
  * @mac: The MAC authenticating @claim
  * @error: A #GError or %NULL on success
  *
- * Reports completion of connect (i.e. open) operation.
+ * Reports completion of connect operation. Responsible for performing SDCP key
+ * agreement, deriving secrets necessary for processing all other SDCP-related
+ * payloads, and verifying the device connection is trusted.
  */
 void
 fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
-                                  GBytes       *r_d,
+                                  GBytes       *device_random,
                                   FpiSdcpClaim *claim,
                                   GBytes       *mac,
                                   GError       *error)
 {
-  g_autoptr(GBytes) r_h = NULL;
-  g_autoptr(GBytes) claim_hash_bytes = NULL;
-  g_autoptr(GBytes) claim_mac = NULL;
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
-  SECKEYPublicKey firmware_key_public = { 0, };
-  SECKEYPublicKey device_key_public = { 0, };
-  SECKEYPublicKey *model_key_public = NULL;
-  HASHContext *hash_ctx;
-  guint8 hash_out[SHA256_LENGTH];
-  guint hash_len = 0;
+  FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+
+  g_autoptr(GBytes) application_secret = NULL;
   FpiDeviceAction action;
-  PK11SymKey *a = NULL;
-  PK11SymKey *enc_secret = NULL;
-  gsize length;
-  SECItem sig, hash;
-  SECStatus r;
 
   action = fpi_device_get_current_action (FP_DEVICE (self));
 
   g_return_if_fail (action == FPI_DEVICE_ACTION_OPEN);
+  g_return_if_fail (priv->host_private_key);
+  g_return_if_fail (priv->host_random);
 
   if (error)
     {
-      if (r_d || claim || mac)
+      if (device_random || claim || mac)
         {
-          g_warning ("Driver provided connect information but also reported error.");
-          g_clear_pointer (&r_d, g_bytes_unref);
+          g_clear_pointer (&device_random, g_bytes_unref);
           g_clear_pointer (&claim, fpi_sdcp_claim_free);
           g_clear_pointer (&mac, g_bytes_unref);
+          fp_warn ("Driver provided SDCP Connect information but also reported error.");
         }
 
       fpi_device_open_complete (FP_DEVICE (self), error);
       return;
     }
 
-  if (!r_d || !claim || !mac ||
-      (!claim->cert_m || !claim->pk_d || !claim->pk_f || !claim->h_f || !claim->s_m || !claim->s_d))
+  if (!device_random || !claim || !mac ||
+      (!claim->model_certificate || !claim->device_public_key || !claim->firmware_public_key ||
+       !claim->firmware_hash || !claim->model_signature || !claim->device_signature))
     {
-      g_warning ("Driver did not provide all required information to callback, returning error instead.");
-      g_clear_pointer (&r_d, g_bytes_unref);
+      fp_dbg ("Driver did not provide all required information to callback; returning error instead.");
+      g_clear_pointer (&device_random, g_bytes_unref);
       g_clear_pointer (&claim, fpi_sdcp_claim_free);
       g_clear_pointer (&mac, g_bytes_unref);
 
       fpi_device_open_complete (FP_DEVICE (self),
                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                          "Driver called connect complete with incomplete arguments."));
+                                                          "Driver called connect complete with "
+                                                          "incomplete arguments"));
       return;
     }
 
-  /* Device key is of same type as host key */
-  g_assert (g_bytes_get_size (claim->pk_f) == 65);
-  firmware_key_public.keyType = ecKey;
-  firmware_key_public.u.ec.DEREncodedParams = SDCPECParamsDER;
-  firmware_key_public.u.ec.publicValue.len = 65;
-  firmware_key_public.u.ec.publicValue.data = (guint8 *) g_bytes_get_data (claim->pk_f, NULL);
-
-  /* SDCP Connect: 5.i. Perform key agreement */
-  a = PK11_PubDeriveWithKDF (priv->host_key_private,
-                             &firmware_key_public,
-                             TRUE,
-                             NULL,
-                             NULL,
-                             CKM_ECDH1_DERIVE,
-                             CKM_SP800_108_COUNTER_KDF,
-                             CKA_DERIVE,
-                             32, /* 256 bit (HMAC) secret */
-                             CKD_NULL,
-                             NULL,
-                             NULL);
-
-  if (!a)
+  /* Verify connect and store the application_secret */
+  if (!fpi_sdcp_verify_connect (priv->host_private_key,
+                                priv->host_random,
+                                device_random,
+                                claim,
+                                mac,
+                                !cls->ignore_device_certificate,
+                                !cls->ignore_device_signatures,
+                                &application_secret,
+                                &error))
     {
-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                        "Error doing key agreement: %d", PORT_GetError ());
-      goto out;
+      fpi_device_open_complete (FP_DEVICE (self), error);
+      return;
     }
 
-  /* SDCP Connect: 5.ii. Derive master secret */
-  g_clear_pointer (&priv->master_secret, PK11_FreeSymKey);
+  fpi_sdcp_device_set_application_secret (self, application_secret);
 
-  r_h = g_bytes_new (priv->host_random, sizeof (priv->host_random));
+  /* Clear no longer needed private data */
+  g_clear_pointer (&priv->host_private_key, g_bytes_unref);
+  g_clear_pointer (&priv->host_public_key, g_bytes_unref);
+  g_clear_pointer (&priv->host_random, g_bytes_unref);
 
-  priv->master_secret = fpi_sdcp_kdf (self,
-                                      a,
-                                      "master secret",
-                                      r_h,
-                                      r_d,
-                                      NULL,
-                                      &error);
-  if (!priv->master_secret)
-    goto out;
-
-  /* SDCP Connect: 5.iii. Derive MAC secret and symetric key */
-
-  /* NOTE: symetric key is never used, as such we just don't derive it! */
-  g_clear_pointer (&priv->mac_secret, PK11_FreeSymKey);
-  priv->mac_secret = fpi_sdcp_kdf (self,
-                                   priv->master_secret,
-                                   "application keys",
-                                   NULL,
-                                   NULL,
-                                   &enc_secret,
-                                   &error);
-  if (!priv->mac_secret)
-    goto out;
-
-  /* SDCP Connect: 5.iv. Validate the MAC over H(claim) */
-  hash_ctx = HASH_Create (HASH_AlgSHA256);
-  if (!hash_ctx)
-    {
-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                        "Could not create hash context");
-      goto out;
-    }
-  HASH_Begin (hash_ctx);
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->cert_m, NULL), g_bytes_get_size (claim->cert_m));
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->pk_d, NULL), g_bytes_get_size (claim->pk_d));
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->pk_f, NULL), g_bytes_get_size (claim->pk_f));
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->h_f, NULL), g_bytes_get_size (claim->h_f));
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->s_m, NULL), g_bytes_get_size (claim->s_m));
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->s_d, NULL), g_bytes_get_size (claim->s_d));
-  HASH_End (hash_ctx, hash_out, &hash_len, sizeof (hash_out));
-  g_clear_pointer (&hash_ctx, HASH_Destroy);
-  g_assert (hash_len == sizeof (hash_out));
-
-  claim_hash_bytes = g_bytes_new (hash_out, sizeof (hash_out));
-  g_debug ("H(c):");
-  dump_bytes (claim_hash_bytes);
-
-  claim_mac = fpi_sdcp_mac (self, "connect", claim_hash_bytes, NULL, &error);
-  if (!claim_mac)
-    goto out;
-
-  g_debug ("MAC(s, \"connect\"||H(c)):");
-  dump_bytes (claim_mac);
-
-  if (!g_bytes_equal (mac, claim_mac))
-    {
-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                        "Device MAC over H(c) is incorrect.");
-      goto out;
-    }
-
-  /* SDCP Connect: 5.v. Unpack the claim (SKIP, already done) */
-  /* SDCP Connect: 5.vi. Verify claim */
-
-  /* First, validate the certificate (and return its public key). */
-  model_key_public = fpi_sdcp_validate_cert (self, claim, &error);
-  if (!model_key_public)
-    goto out;
-
-  /* Verify(pk_m, H(pk_d), s_m) */
-  sig.data = (guint8 *) g_bytes_get_data (claim->s_m, &length);
-  sig.len = length;
-  memset (hash_out, 0, sizeof (hash_out));
-  r = PK11_HashBuf (HASH_GetHashOidTagByHashType (HASH_AlgSHA256),
-                    hash_out,
-                    g_bytes_get_data (claim->pk_d, NULL),
-                    g_bytes_get_size (claim->pk_d));
-  if (r != SECSuccess)
-    {
-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                        "Failed to hash device public key!");
-      goto out;
-    }
-
-  hash.data = hash_out;
-  hash.len = sizeof (hash_out);
-  r = PK11_Verify (model_key_public, &sig, &hash, NULL);
-  if (r != SECSuccess)
-    {
-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                        "Verification of device public key failed: %d", PORT_GetError ());
-      goto out;
-    }
-
-  device_key_public.keyType = ecKey;
-  device_key_public.u.ec.DEREncodedParams = SDCPECParamsDER;
-  device_key_public.u.ec.publicValue.len = g_bytes_get_size (claim->pk_d);
-  device_key_public.u.ec.publicValue.data = (guint8 *) g_bytes_get_data (claim->pk_d, NULL);
-
-  /* Verify(pk_d, H(C001||h_f||pk_f), s_d) */
-  sig.data = (guint8 *) g_bytes_get_data (claim->s_d, &length);
-  sig.len = length;
-
-  hash_ctx = HASH_Create (HASH_AlgSHA256);
-  if (!hash_ctx)
-    {
-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                        "Could not create hash context");
-      goto out;
-    }
-  HASH_Begin (hash_ctx);
-  HASH_Update (hash_ctx, (guint8 *) "\xC0\x01", 2);
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->h_f, NULL), g_bytes_get_size (claim->h_f));
-  HASH_Update (hash_ctx, g_bytes_get_data (claim->pk_f, NULL), g_bytes_get_size (claim->pk_f));
-  HASH_End (hash_ctx, hash_out, &hash_len, sizeof (hash_out));
-  g_clear_pointer (&hash_ctx, HASH_Destroy);
-  g_assert (hash_len == sizeof (hash_out));
-
-  hash.data = hash_out;
-  hash.len = sizeof (hash_out);
-  r = PK11_Verify (&device_key_public, &sig, &hash, NULL);
-  if (r != SECSuccess)
-    {
-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                        "Verification of boot process failed: %d", PORT_GetError ());
-      goto out;
-    }
-
-  /* XXX/FIXME: We should be checking H(f) against a list of compromised firmwares.
-   *            We would need a way to distribute and load it though.
-   */
-
-out:
-  g_clear_pointer (&a, PK11_FreeSymKey);
-  g_clear_pointer (&enc_secret, PK11_FreeSymKey);
-  g_clear_pointer (&model_key_public, SECKEY_DestroyPublicKey);
-
-  if (error)
-    g_clear_pointer (&priv->mac_secret, PK11_FreeSymKey);
-
-  fpi_device_open_complete (FP_DEVICE (self), error);
+  fpi_device_open_complete (FP_DEVICE (self), NULL);
 }
 
 /**
@@ -1102,20 +591,22 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
                                     GBytes       *mac,
                                     GError       *error)
 {
-  g_autoptr(GError) err = NULL;
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
+
+  g_autoptr(GBytes) application_secret = NULL;
   FpiDeviceAction action;
 
   action = fpi_device_get_current_action (FP_DEVICE (self));
 
   g_return_if_fail (action == FPI_DEVICE_ACTION_OPEN);
+  g_return_if_fail (priv->reconnect_random);
 
   if (error)
     {
       if (mac)
         {
-          g_warning ("Driver provided a MAC but also reported an error.");
-          g_bytes_unref (mac);
+          fp_warn ("Driver provided a reconnect MAC but also reported an error.");
+          g_clear_pointer (&mac, g_bytes_unref);
         }
 
       /* Silently try a normal connect instead. */
@@ -1123,27 +614,16 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
     }
   else if (mac)
     {
-      g_autoptr(GBytes) mac_verify = NULL;
-      g_autoptr(GBytes) host_random = NULL;
+      fpi_sdcp_device_get_application_secret (self, &application_secret);
 
-      /* We got a MAC, so we can check whether the device
-       * still agrees with us on the shared secret. */
-      host_random = g_bytes_new (priv->host_random, sizeof (priv->host_random));
-      mac_verify = fpi_sdcp_mac (self, "reconnect", host_random, NULL, &err);
-      if (!mac_verify)
+      if (fpi_sdcp_verify_reconnect (application_secret, priv->reconnect_random, mac, &error))
         {
-          fpi_device_open_complete (FP_DEVICE (self), g_steal_pointer (&err));
-          return;
-        }
-
-      if (g_bytes_equal (mac, mac_verify))
-        {
-          g_debug ("Reconnect succeeded");
+          fp_dbg ("SDCP Reconnect succeeded");
           fpi_device_open_complete (FP_DEVICE (self), NULL);
         }
       else
         {
-          g_message ("Fast reconnect with SDCP device failed, doing a full connect.");
+          fp_dbg ("SDCP Reconnect failed; doing a full connect.");
           fpi_sdcp_device_connect (self);
         }
     }
@@ -1151,125 +631,132 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
     {
       fpi_device_open_complete (FP_DEVICE (self),
                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                          "Driver called reconnect complete with wrong arguments."));
+                                                          "Driver called reconnect complete with wrong arguments"));
     }
+
+  /* Clear no longer needed private data */
+  g_clear_pointer (&priv->reconnect_random, g_bytes_unref);
 }
 
 /**
- * fpi_sdcp_device_enroll_set_nonce:
+ * fpi_sdcp_device_list_complete:
  * @self: a #FpSdcpDevice fingerprint device
- * @nonce: The device generated nonce
+ * @ids: A #GPtrArray of #GBytes of each SDCP enrollment ID stored on the device
+ * @error: A #GError or %NULL on success
  *
- * Called during enroll to inform the SDCP base class about the nonce
- * that the device chose. This can be called at any point, but must be
- * called before calling fpi_sdcp_device_enroll_ready().
+ * Convenience function to create the minimally required #FpPrint list for
+ * #FpSdcpDevice prints using the provided @ids, then uses that #FpPrint list to
+ * report completion of the list operation.
+ *
+ * If the device provides additional attributes that should be stored on each
+ * #FpPrint as part of the list operation, a #GPtrArray of #FpPrint can instead
+ * be created with the additional attributes and fpi_device_list_complete() can
+ * be used instead of this function.
+ *
+ * Please note that the @ids array will be freed using g_ptr_array_unref() and
+ * the elements are destroyed automatically. As such, you must use
+ * g_ptr_array_new_with_free_func() with `(GDestroyNotify) g_bytes_unref` as the
+ * free func when creating the #GPtrArray.
  */
 void
-fpi_sdcp_device_enroll_set_nonce (FpSdcpDevice *self,
-                                  GBytes       *nonce)
+fpi_sdcp_device_list_complete (FpSdcpDevice *self,
+                               GPtrArray    *ids,
+                               GError       *error)
 {
-  g_autoptr(GBytes) id = NULL;
-  GVariant *id_var;
-  FpPrint *print;
-  GVariant *data;
+  g_autoptr(GPtrArray) prints = NULL;
+  gint prints_len = 0;
+  FpiDeviceAction action;
 
-  g_return_if_fail (FP_IS_SDCP_DEVICE (self));
-  g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
+  action = fpi_device_get_current_action (FP_DEVICE (self));
 
-  g_return_if_fail (nonce || g_bytes_get_size (nonce) != 32);
-
-  fpi_device_get_enroll_data (FP_DEVICE (self), &print);
-
-  id = fpi_sdcp_mac (self, "enroll", nonce, NULL, NULL);
-  if (!id)
-    {
-      g_warning ("Could not generate enroll MAC");
-      return;
-    }
-
-  id_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
-                                      g_bytes_get_data (id, NULL),
-                                      g_bytes_get_size (id),
-                                      1);
-  data = g_variant_new ("(@ay)", id_var);
-
-  /* Set to true once committed */
-  fpi_print_set_device_stored (print, FALSE);
-
-  /* Attach the ID to the print */
-  g_object_set (print, "fpi-data", data, NULL);
-}
-
-/**
- * fpi_sdcp_device_enroll_ready:
- * @self: a #FpSdcpDevice fingerprint device
- * @error: a #GError or %NULL on success
- *
- * Called when the print is ready to be committed to device memory.
- * For each enroll step, fpi_device_enroll_progress() must first
- * be called until the enroll is ready to be committed.
- */
-void
-fpi_sdcp_device_enroll_ready (FpSdcpDevice *self,
-                              GError       *error)
-{
-  g_autoptr(GVariant) data = NULL;
-  g_autoptr(GVariant) id_var = NULL;
-  g_autoptr(GBytes) id = NULL;
-  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
-  FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
-  FpPrint *print;
-
-  g_return_if_fail (FP_IS_SDCP_DEVICE (self));
-  g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
-
-  fpi_device_get_enroll_data (FP_DEVICE (self), &print);
+  g_return_if_fail (action == FPI_DEVICE_ACTION_LIST);
 
   if (error)
     {
+      fpi_device_list_complete (FP_DEVICE (self), NULL, error);
+      return;
+    }
+
+  prints = g_ptr_array_new_with_free_func (g_object_unref);
+
+  /* Allow an empty array (prints_len=0) but if ids has been passed, use it */
+  if (ids)
+    prints_len = ids->len;
+
+  for (gint i = 0; i < prints_len; i++)
+    {
+      FpPrint *print = fp_print_new (FP_DEVICE (self));
+      fpi_print_set_type (print, FPI_PRINT_SDCP);
+      fpi_print_set_device_stored (print, FALSE);
+      fpi_sdcp_device_set_print_id (print, g_ptr_array_index (ids, i));
+      g_ptr_array_add (prints, g_object_ref_sink (print));
+    }
+
+  fpi_device_list_complete (FP_DEVICE (self), g_steal_pointer (&prints), NULL);
+
+  g_clear_pointer (&ids, g_ptr_array_unref);
+}
+
+/**
+ * fpi_sdcp_device_enroll_commit:
+ * @self: a #FpSdcpDevice fingerprint device
+ * @nonce: The device generated nonce
+ * @error: a #GError or %NULL on success
+ *
+ * Called when the print is ready to be committed to device memory.
+ * During enrollment, fpi_device_enroll_progress() must be called for each
+ * successful stage before the print can be committed.
+ * The @nonce generated by the device-specific EnrollmentNonce response must be
+ * provided in order for the enrollment ID to be generated.
+ * The driver's enroll_commit() vfunc will be triggered upon successfully
+ * generating the enrollment ID.
+ */
+void
+fpi_sdcp_device_enroll_commit (FpSdcpDevice *self,
+                               GBytes       *nonce,
+                               GError       *error)
+{
+  FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+
+  g_autoptr(GBytes) application_secret = NULL;
+  GBytes *id = NULL;
+  FpPrint *print;
+
+  g_return_if_fail (FP_IS_SDCP_DEVICE (self));
+  g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
+  g_return_if_fail (nonce != NULL);
+
+  fpi_device_get_enroll_data (FP_DEVICE (self), &print);
+  fpi_sdcp_device_get_application_secret (self, &application_secret);
+
+  id = fpi_sdcp_generate_enrollment_id (application_secret, nonce, &error);
+  if (!id || error)
+    {
+      fp_warn ("Could not generate SDCP enrollment ID");
+
+      /* clear potentially non-functioning application_secret */
+      fpi_sdcp_device_unset_application_secret (self);
+
       fpi_device_enroll_complete (FP_DEVICE (self), NULL, error);
       g_object_set (print, "fpi-data", NULL, NULL);
       return;
     }
 
-  /* TODO: The following will need to ensure that the ID has been generated */
+  /* Set to true once committed */
+  fpi_print_set_device_stored (print, FALSE);
 
-  g_object_get (G_OBJECT (print), "fpi-data", &data, NULL);
+  /* Attach the ID to the print */
+  fpi_sdcp_device_set_print_id (print, id);
 
-  if (data)
-    {
-      const guint8 *id_data;
-      gsize id_len;
+  cls->enroll_commit (self, id);
 
-      g_variant_get (data,
-                     "(@ay)",
-                     &id_var);
-
-      id_data = g_variant_get_fixed_array (id_var, &id_len, 1);
-      id = g_bytes_new (id_data, id_len);
-    }
-
-  g_debug ("ID/enroll mac:");
-  dump_bytes (id);
-
-  if (!id)
-    {
-      g_warning ("Driver failed to call fpi_sdcp_device_enroll_set_nonce, aborting enroll.");
-
-      /* NOTE: Cancel the enrollment, i.e. don't commit */
-      priv->enroll_pre_commit_error = fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                                "Device/driver did not provide a nonce as required by protocol, aborting enroll!");
-      cls->enroll_commit (self, NULL);
-    }
-  else
-    {
-      cls->enroll_commit (self, g_steal_pointer (&id));
-    }
+  g_clear_pointer (&id, g_bytes_unref);
 }
 
 /**
  * fpi_sdcp_device_enroll_commit_complete:
  * @self: a #FpSdcpDevice fingerprint device
+ * @error: a #GError or %NULL on success
  *
  * Called when device has committed the given print to memory.
  * This finalizes the enroll operation.
@@ -1278,26 +765,11 @@ void
 fpi_sdcp_device_enroll_commit_complete (FpSdcpDevice *self,
                                         GError       *error)
 {
-  g_autoptr(GVariant) data = NULL;
-  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
+  g_autoptr(GBytes) id = NULL;
   FpPrint *print;
 
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
-
-  if (priv->enroll_pre_commit_error)
-    {
-      if (error)
-        {
-          g_warning ("Cancelling enroll after error failed with: %s", error->message);
-          g_error_free (error);
-        }
-
-      fpi_device_enroll_complete (FP_DEVICE (self),
-                                  NULL,
-                                  g_steal_pointer (&priv->enroll_pre_commit_error));
-      return;
-    }
 
   if (error)
     {
@@ -1306,10 +778,11 @@ fpi_sdcp_device_enroll_commit_complete (FpSdcpDevice *self,
     }
 
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
-  g_object_get (G_OBJECT (print), "fpi-data", &data, NULL);
-  if (!data)
+
+  fpi_sdcp_device_get_print_id (print, &id);
+  if (!id)
     {
-      g_error ("Inconsistent state, the print must have the enrolled ID attached at this point");
+      g_error ("Inconsistent state; the print must have the enrolled ID attached at this point");
       return;
     }
 
@@ -1365,68 +838,73 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
                                    GBytes       *mac,
                                    GError       *error)
 {
-  g_autoptr(GBytes) mac_verify = NULL;
-  g_autoptr(GBytes) host_random = NULL;
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
-  GError *err = NULL;
+
+  g_autoptr(GBytes) application_secret = NULL;
   FpPrint *identified_print;
-  GVariant *id_var;
-  GVariant *data;
   FpiDeviceAction action;
 
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   action = fpi_device_get_current_action (FP_DEVICE (self));
 
   g_return_if_fail (action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_VERIFY);
+  g_return_if_fail (priv->identify_nonce);
 
   if (error)
     {
+      g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
       fpi_device_action_error (FP_DEVICE (self), error);
       return;
     }
 
-  if (!id || !mac || g_bytes_get_size (id) != 32 || g_bytes_get_size (mac) != 32)
+  /* No error and no valid id/mac provided means that there was no match from the device */
+  if (!id || !mac || g_bytes_get_size (id) != SDCP_ENROLLMENT_ID_SIZE ||
+      g_bytes_get_size (mac) != SDCP_MAC_SIZE)
     {
-      fpi_device_action_error (FP_DEVICE (self),
-                               fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                         "Driver returned incorrect ID/MAC for identify operation"));
+      g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
+      if (action == FPI_DEVICE_ACTION_VERIFY)
+        {
+          fpi_device_verify_report (FP_DEVICE (self), FPI_MATCH_FAIL, NULL, NULL);
+          fpi_device_verify_complete (FP_DEVICE (self), NULL);
+        }
+      else
+        {
+          fpi_device_identify_report (FP_DEVICE (self), NULL, NULL, NULL);
+          fpi_device_identify_complete (FP_DEVICE (self), NULL);
+        }
       return;
     }
 
-  host_random = g_bytes_new (priv->host_random, sizeof (priv->host_random));
-  mac_verify = fpi_sdcp_mac (self, "identify", host_random, id, &err);
-  if (!mac_verify)
-    {
-      fpi_device_action_error (FP_DEVICE (self),
-                               err);
-      return;
-    }
+  fpi_sdcp_device_get_application_secret (self, &application_secret);
 
-  if (!g_bytes_equal (mac, mac_verify))
+  if (!fpi_sdcp_verify_identify (application_secret, priv->identify_nonce, id, mac, &error))
     {
+      g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
+
+      /* clear potentially non-functioning application_secret */
+      fpi_sdcp_device_unset_application_secret (self);
+
       fpi_device_action_error (FP_DEVICE (self),
                                fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                         "Reported match from the device cannot be trusted!"));
+                                                         "SDCP AuthorizedIdentity verification "
+                                                         "failed: %s",
+                                                         error->message));
       return;
     }
+
+  /* Clear no longer needed private data */
+  g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
 
   /* Create a new print */
   identified_print = fp_print_new (FP_DEVICE (self));
 
   fpi_print_set_type (identified_print, FPI_PRINT_SDCP);
-  fpi_print_set_device_stored (identified_print, TRUE);
-
-  id_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
-                                      g_bytes_get_data (id, NULL),
-                                      g_bytes_get_size (id),
-                                      1);
-  data = g_variant_new ("(@ay)", id_var);
 
   /* Set to true once committed */
   fpi_print_set_device_stored (identified_print, FALSE);
 
   /* Attach the ID to the print */
-  g_object_set (identified_print, "fpi-data", data, NULL);
+  fpi_sdcp_device_set_print_id (identified_print, id);
 
 
   /* The surrounding API expects a match/no-match against a given set. */
@@ -1466,4 +944,72 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
       fpi_device_identify_report (FP_DEVICE (self), NULL, identified_print, NULL);
       fpi_device_identify_complete (FP_DEVICE (self), NULL);
     }
+}
+
+/**
+ * fpi_sdcp_device_get_print_id:
+ * @print: an SDCP device #FpPrint
+ * @id: (out) (transfer full): the ID gotten from the @print data
+ *
+ * Gets the SDCP enrollment ID from the @print data.
+ *
+ * The returned @id may be %NULL if the data was not set or in the wrong format.
+ */
+void
+fpi_sdcp_device_get_print_id (FpPrint *print,
+                              GBytes **id)
+{
+  g_autoptr(GVariant) id_var = NULL;
+  g_autoptr(GVariant) data = NULL;
+  const guint8 *id_data;
+  gsize id_len;
+
+  g_return_if_fail (print);
+  g_return_if_fail (*id == NULL);
+
+  g_object_get (G_OBJECT (print), "fpi-data", &data, NULL);
+
+  if (!data)
+    {
+      fp_warn ("SDCP print data has not been set.");
+      return;
+    }
+
+  if (!g_variant_check_format_string (data, "(@ay)", FALSE))
+    {
+      fp_warn ("SDCP print data is not in expected format.");
+      return;
+    }
+
+  g_variant_get (data, "(@ay)", &id_var);
+
+  id_data = g_variant_get_fixed_array (id_var, &id_len, sizeof (guint8));
+
+  *id = g_bytes_new (id_data, id_len);
+}
+
+/**
+ * fpi_sdcp_device_set_print_id:
+ * @print: an SDCP device #FpPrint
+ * @id: the ID to set in the @print data
+ *
+ * Sets the SDCP enrollment ID in the @print data.
+ */
+void
+fpi_sdcp_device_set_print_id (FpPrint *print,
+                              GBytes  *id)
+{
+  GVariant *id_var;
+  GVariant *data;
+
+  g_return_if_fail (print);
+  g_return_if_fail (id);
+
+  id_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
+                                      g_bytes_get_data (id, NULL),
+                                      g_bytes_get_size (id),
+                                      1);
+  data = g_variant_new ("(@ay)", id_var);
+
+  g_object_set (G_OBJECT (print), "fpi-data", data, NULL);
 }

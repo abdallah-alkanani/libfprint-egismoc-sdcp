@@ -1,6 +1,7 @@
 /*
  * FpSdcpDevice - A base class for SDCP enabled devices
  * Copyright (C) 2020 Benjamin Berg <bberg@redhat.com>
+ * Copyright (C) 2025 Joshua Grisham <josh@joshuagrisham.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,38 +22,26 @@
 
 #include "fpi-sdcp-device.h"
 
-#include <nss.h>
-#include <keyhi.h>
-#include <keythi.h>
-#include <pk11pub.h>
-
 typedef struct
 {
-  GError *enroll_pre_commit_error;
-
-  /* XXX: Do we want a separate SDCP session object?
-   */
-
-  GPtrArray *intermediate_cas;
-
-  /* Host random for the connection */
-  guint8            host_random[32];
-
-  NSSInitContext   *nss_init_context;
-  PK11SlotInfo     *slot;
-  SECKEYPrivateKey *host_key_private;
-  SECKEYPublicKey  *host_key_public;
-
-  /* Master secret is required for reconnects.
-   * TODO: We probably want to serialize this to disk so it can survive
-   *       fprintd idle shutdown. */
-  PK11SymKey *master_secret;
-  PK11SymKey *mac_secret;
-
+  GBytes   *host_private_key;
+  GBytes   *host_public_key;
+  GBytes   *host_random;
+  GBytes   *reconnect_random;
+  GBytes   *identify_nonce;
+  GVariant *data;
 } FpSdcpDevicePrivate;
 
+void fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,
+                                             GBytes      **application_secret);
+void fpi_sdcp_device_set_application_secret (FpSdcpDevice *self,
+                                             GBytes       *application_secret);
+void fpi_sdcp_device_unset_application_secret (FpSdcpDevice *self);
+
+void fpi_sdcp_device_open (FpSdcpDevice *self);
 void fpi_sdcp_device_connect (FpSdcpDevice *self);
 void fpi_sdcp_device_reconnect (FpSdcpDevice *self);
 
+void fpi_sdcp_device_list (FpSdcpDevice *self);
 void fpi_sdcp_device_enroll (FpSdcpDevice *self);
 void fpi_sdcp_device_identify (FpSdcpDevice *self);

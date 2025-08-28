@@ -112,7 +112,6 @@ virtual_drivers = [
     'virtual_image',
     'virtual_device',
     'virtual_device_storage',
-    'virtual_sdcp',
 ]
 default_drivers = [
     'upektc_img',
@@ -210,12 +209,11 @@ driver_helper_mapping = {
     'aes2660' : [ 'aeslib', 'aesx660' ],
     'aes3500' : [ 'aeslib', 'aes3k' ],
     'aes4000' : [ 'aeslib', 'aes3k' ],
-    'uru4000' : [ 'openssl' ],
     'elanspi' : [ 'udev' ],
+    'uru4000' : [ 'openssl' ],
     'virtual_image'          : [ 'virtual' ],
     'virtual_device'         : [ 'virtual' ],
     'virtual_device_storage' : [ 'virtual' ],
-    'virtual_sdcp'           : [ 'sdcp' ],
 }
 
 driver_helpers = []

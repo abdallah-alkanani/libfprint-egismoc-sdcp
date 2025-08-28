@@ -14,9 +14,6 @@ envs.prepend('LD_LIBRARY_PATH', meson.project_build_root() / 'libfprint')
 # random numbers rather than proper ones)
 envs.set('FP_DEVICE_EMULATION', '1')
 
-# Path to SDCP virtual device binary, only used for virtual-sdcp test
-envs.set('SDCP_VIRT_BINARY', get_option('sdcp_virt_binary'))
-
 # Set a colon-separated list of native drivers we enable in tests
 envs.set('FP_DRIVERS_ALLOWLIST', ':'.join([
     'virtual_image',
@@ -249,13 +246,10 @@ else
     endforeach
 endif
 
-test_utils = static_library('fprint-test-utils',
-    sources: [
-        'test-utils.c',
-        'test-device-fake.c',
-    ],
-    dependencies: libfprint_private_dep,
-    install: false)
+test_util_sources = [
+    'test-utils.c',
+    'test-device-fake.c',
+]
 
 unit_tests = [
     'fpi-device',
@@ -269,6 +263,22 @@ if 'virtual_image' in drivers
         'fp-device',
     ]
 endif
+
+if 'sdcp' in driver_helpers
+    test_util_sources += [
+        'test-sdcp-device-fake.c',
+        'test-sdcp-utils.c',
+    ]
+    unit_tests += [
+        'fp-sdcp-device',
+        'fpi-sdcp',
+    ]
+endif
+
+test_utils = static_library('fprint-test-utils',
+    sources: test_util_sources,
+    dependencies: libfprint_private_dep,
+    install: false)
 
 unit_tests_deps = { 'fpi-assembling' : [cairo_dep] }
 
