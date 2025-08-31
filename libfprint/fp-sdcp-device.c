@@ -89,7 +89,7 @@ fp_sdcp_device_finalize (GObject *object)
   g_clear_pointer (&priv->host_random, g_bytes_unref);
   g_clear_pointer (&priv->reconnect_random, g_bytes_unref);
   g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
-  g_clear_pointer (&priv->data, g_variant_unref);
+  g_clear_pointer (&priv->data, g_bytes_unref);
 
   G_OBJECT_CLASS (fp_sdcp_device_parent_class)->finalize (object);
 }
@@ -106,7 +106,7 @@ fp_sdcp_device_get_property (GObject    *object,
   switch (prop_id)
     {
     case PROP_SDCP_DATA:
-      g_value_set_variant (value, priv->data);
+      g_value_set_boxed (value, priv->data);
       break;
 
     default:
@@ -126,8 +126,8 @@ fp_sdcp_device_set_property (GObject      *object,
   switch (prop_id)
     {
     case PROP_SDCP_DATA:
-      g_clear_pointer (&priv->data, g_variant_unref);
-      priv->data = g_value_dup_variant (value);
+      g_clear_pointer (&priv->data, g_bytes_unref);
+      priv->data = g_value_dup_boxed (value);
       break;
 
     default:
@@ -159,13 +159,12 @@ fp_sdcp_device_class_init (FpSdcpDeviceClass *klass)
   fp_device_class->identify = fp_sdcp_device_identify;
 
   properties[PROP_SDCP_DATA] =
-    g_param_spec_variant ("sdcp-data",
-                          "SDCP Data",
-                          "SDCP-related device data that should be persisted and used with the "
-                          "device during the current system boot",
-                          G_VARIANT_TYPE_ANY,
-                          NULL,
-                          G_PARAM_STATIC_STRINGS | G_PARAM_READWRITE);
+    g_param_spec_boxed ("sdcp-data",
+                        "SDCP Data",
+                        "SDCP-related device data that should be persisted and used with the "
+                        "device during the current system boot",
+                        G_TYPE_BYTES,
+                        G_PARAM_STATIC_STRINGS | G_PARAM_READWRITE);
 
   g_object_class_install_properties (object_class, N_PROPS, properties);
 

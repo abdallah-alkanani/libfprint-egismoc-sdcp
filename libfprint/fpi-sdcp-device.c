@@ -151,10 +151,7 @@ void
 fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,
                                         GBytes      **application_secret)
 {
-  g_autoptr(GVariant) data = NULL;
-  g_autoptr(GVariant) application_secret_var = NULL;
-  const guint8 *application_secret_data;
-  gsize application_secret_len = 0;
+  GBytes *data = NULL;
 
   g_return_if_fail (*application_secret == NULL);
 
@@ -163,37 +160,16 @@ fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,
   if (!data)
     return;
 
-  if (!g_variant_check_format_string (data, "(@ay)", FALSE))
-    {
-      fp_warn ("SDCP data is not in expected format.");
-      return;
-    }
-
-  g_variant_get (data, "(@ay)", &application_secret_var);
-
-  application_secret_data = g_variant_get_fixed_array (application_secret_var,
-                                                       &application_secret_len,
-                                                       sizeof (guint8));
-
-  *application_secret = g_bytes_new (application_secret_data, application_secret_len);
+  *application_secret = g_steal_pointer (&data);
 }
 
 void
 fpi_sdcp_device_set_application_secret (FpSdcpDevice *self,
                                         GBytes       *application_secret)
 {
-  GVariant *application_secret_var;
-  GVariant *data;
-
   g_return_if_fail (application_secret);
 
-  application_secret_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
-                                                      g_bytes_get_data (application_secret, NULL),
-                                                      g_bytes_get_size (application_secret),
-                                                      sizeof (guint8));
-  data = g_variant_new ("(@ay)", application_secret_var);
-
-  g_object_set (G_OBJECT (self), "sdcp-data", data, NULL);
+  g_object_set (G_OBJECT (self), "sdcp-data", application_secret, NULL);
 }
 
 void
