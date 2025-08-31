@@ -118,7 +118,7 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
 
 out_error:
   g_propagate_error (error,
-                     fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                     fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                "OpenSSL error verifying signature for label '%s'",
                                                label));
   print_openssl_errors ();
@@ -148,8 +148,10 @@ fpi_sdcp_get_truststore (GError **error)
   truststore = X509_STORE_new ();
   if (!truststore)
     {
-      fp_dbg ("Failed initializing SDCP X509 certificate store");
-      goto out_error;
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "Failed initializing SDCP X509 certificate store"));
+      goto out;
     }
 
   fpi_sdcp_truststore_register_resource ();
@@ -158,7 +160,10 @@ fpi_sdcp_get_truststore (GError **error)
                                                     G_RESOURCE_LOOKUP_FLAGS_NONE, error);
   if (*error)
     {
-      fp_dbg ("Error loading SDCP truststore certificates: %s", (*error)->message);
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "Error loading SDCP truststore certificates: %s",
+                                                   (*error)->message));
       goto out;
     }
   for (int i = 0; trustcert_names[i]; i++)
@@ -168,8 +173,11 @@ fpi_sdcp_get_truststore (GError **error)
       trustcert_gb = g_resource_lookup_data (truststore_resource, trustcert_path, 0, error);
       if (*error)
         {
-          fp_dbg ("Error loading SDCP truststore certificate '%s': %s",
-                  trustcert_names[i], (*error)->message);
+          g_propagate_error (error,
+                             fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                       "Error loading SDCP truststore "
+                                                       "certificate '%s': %s",
+                                                       trustcert_names[i], (*error)->message));
           goto out;
         }
       g_free (trustcert_path);
@@ -180,16 +188,22 @@ fpi_sdcp_get_truststore (GError **error)
       bio = BIO_new (BIO_s_mem ());
       if (BIO_write (bio, trustcert_ptr, trustcert_len) != trustcert_len)
         {
-          fp_dbg ("Failed reading '%s' to buffer", trustcert_names[i]);
-          goto out_error;
+          g_propagate_error (error,
+                             fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                       "Failed reading '%s' to buffer",
+                                                       trustcert_names[i]));
+          goto out;
         }
       g_bytes_unref (trustcert_gb);
       trustcert = PEM_read_bio_X509 (bio, NULL, NULL, NULL);
       //print_certificate (trustcert);
       if (!X509_STORE_add_cert (truststore, trustcert))
         {
-          fp_dbg ("Failed adding '%s' to X509 store", trustcert_names[i]);
-          goto out_error;
+          g_propagate_error (error,
+                             fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                       "Failed adding '%s' to X509 store",
+                                                       trustcert_names[i]));
+          goto out;
         }
       BIO_free (bio);
       X509_free (trustcert);
@@ -200,13 +214,8 @@ fpi_sdcp_get_truststore (GError **error)
 
   return truststore;
 
-out_error:
-  g_propagate_error (error,
-                     fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                               "OpenSSL error setting up certificate verification"));
-  print_openssl_errors ();
-  goto out;
 out:
+  print_openssl_errors ();
   g_clear_pointer (&trustcert_names, g_strfreev);
   g_clear_pointer (&trustcert, X509_free);
   return NULL;
@@ -263,16 +272,15 @@ fpi_sdcp_verify_certificate (X509    *certificate,
 
 out_error:
   g_propagate_error (error,
-                     fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                     fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                "OpenSSL error setting up certificate verification"));
   print_openssl_errors ();
   goto out;
 out_verify_error:
   g_propagate_error (error,
-                     fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                               "OpenSSL error verifying model certificate"));
-  fp_dbg ("OpenSSL verification error: %s",
-          X509_verify_cert_error_string (X509_STORE_CTX_get_error (ctx)));
+                     fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                               "OpenSSL error verifying model certificate: %s",
+                                               X509_verify_cert_error_string (X509_STORE_CTX_get_error (ctx))));
 out:
   g_clear_pointer (&param, X509_VERIFY_PARAM_free);
   g_clear_pointer (&ctx, X509_STORE_CTX_free);
@@ -328,7 +336,7 @@ fpi_sdcp_kdf (GBytes      *key,
   secret = g_malloc0 (length);
   if (!EVP_KDF_derive (kdf_ctx, secret, length, params))
     {
-      g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+      g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                           "OpenSSL error during key derivation "
                                                           "for label '%s'", label));
       g_free (secret);
@@ -400,7 +408,7 @@ fpi_sdcp_mac (GBytes      *application_secret,
   return g_steal_pointer (&res);
 
 out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                       "OpenSSL error generating MAC for label '%s'",
                                                       label));
   print_openssl_errors ();
@@ -439,7 +447,7 @@ fpi_sdcp_get_private_key (EVP_PKEY *pkey,
   return g_steal_pointer (&res);
 
 out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                       "OpenSSL error getting private key bytes"));
   print_openssl_errors ();
   g_clear_pointer (&priv, g_free);
@@ -470,7 +478,7 @@ fpi_sdcp_get_public_key (EVP_PKEY *pkey,
   return g_steal_pointer (&res);
 
 out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                       "OpenSSL error getting public key bytes"));
   print_openssl_errors ();
   g_clear_pointer (&pub, g_free);
@@ -538,7 +546,7 @@ fpi_sdcp_get_private_pkey (GBytes  *private_key,
   return g_steal_pointer (&key);
 
 out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                       "OpenSSL error getting private key"));
   print_openssl_errors ();
   g_clear_pointer (&key, EVP_PKEY_free);
@@ -582,7 +590,7 @@ fpi_sdcp_get_public_pkey (GBytes  *public_key,
   return g_steal_pointer (&key);
 
 out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                       "OpenSSL error getting public key"));
   print_openssl_errors ();
   g_clear_pointer (&key, EVP_PKEY_free);
@@ -646,7 +654,7 @@ fpi_sdcp_hash_claim (FpiSdcpClaim *claim,
   return g_steal_pointer (&res);
 
 out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                       "OpenSSL error hashing the SDCP claim"));
   print_openssl_errors ();
   g_clear_pointer (&sh256_ctx, EVP_MD_CTX_free);
@@ -704,7 +712,7 @@ fpi_sdcp_key_agreement (GBytes  *host_private_key,
   return g_steal_pointer (&res);
 
 out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                       "OpenSSL error deriving key agreement"));
   print_openssl_errors ();
 out:
@@ -755,7 +763,7 @@ fpi_sdcp_generate_random (GError **error)
   if (!RAND_bytes (random, SDCP_RANDOM_SIZE))
     {
       g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                    "OpenSSL error generating random"));
       print_openssl_errors ();
       g_free (random);
@@ -857,7 +865,9 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
     }
   else
     {
-      fp_warn ("SDCP ConnectResponse claim validation failed");
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "SDCP ConnectResponse claim validation failed"));
       goto out;
     }
 
@@ -874,7 +884,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
       if (!cert)
         {
           g_propagate_error (error,
-                             fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                             fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                        "Error parsing model certificate"));
           goto out;
         }
@@ -899,8 +909,9 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
           if (!cert_public_pkey)
             {
               g_propagate_error (error,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                           "Error getting public key from model certificate"));
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                           "Error getting public key from "
+                                                           "model certificate"));
               goto out;
             }
 
@@ -916,7 +927,10 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
                                           claim->model_signature,
                                           error))
             {
-              fp_warn ("SDCP model signature verification failed");
+              g_propagate_error (error,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                           "SDCP model signature verification "
+                                                           "failed"));
               goto out_error;
             }
 
@@ -945,7 +959,10 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
                                           claim->model_signature,
                                           error))
             {
-              fp_warn ("SDCP device signature verification failed");
+              g_propagate_error (error,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                           "SDCP device signature verification "
+                                                           "failed"));
               goto out_error;
             }
 
@@ -1002,7 +1019,9 @@ fpi_sdcp_verify_reconnect (GBytes  *application_secret,
     }
   else
     {
-      fp_warn ("SDCP ReconnectResponse verification failed");
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "SDCP ReconnectResponse verification failed"));
       return FALSE;
     }
 }
@@ -1035,7 +1054,9 @@ fpi_sdcp_verify_identify (GBytes  *application_secret,
     }
   else
     {
-      fp_warn ("SDCP AuthorizedIdentity verification failed");
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "SDCP AuthorizedIdentity verification failed"));
       return FALSE;
     }
 }

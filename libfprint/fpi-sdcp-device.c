@@ -197,12 +197,6 @@ fpi_sdcp_device_set_application_secret (FpSdcpDevice *self,
 }
 
 void
-fpi_sdcp_device_unset_application_secret (FpSdcpDevice *self)
-{
-  g_object_set (G_OBJECT (self), "sdcp-data", NULL);
-}
-
-void
 fpi_sdcp_device_open (FpSdcpDevice *self)
 {
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
@@ -564,7 +558,10 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
                                 &application_secret,
                                 &error))
     {
-      fpi_device_open_complete (FP_DEVICE (self), error);
+      fpi_device_open_complete (FP_DEVICE (self),
+                                fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                          "SDCP Connect verification failed: %s",
+                                                          error->message));
       return;
     }
 
@@ -733,10 +730,6 @@ fpi_sdcp_device_enroll_commit (FpSdcpDevice *self,
   if (!id || error)
     {
       fp_warn ("Could not generate SDCP enrollment ID");
-
-      /* clear potentially non-functioning application_secret */
-      fpi_sdcp_device_unset_application_secret (self);
-
       fpi_device_enroll_complete (FP_DEVICE (self), NULL, error);
       g_object_set (print, "fpi-data", NULL, NULL);
       return;
@@ -880,15 +873,7 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
   if (!fpi_sdcp_verify_identify (application_secret, priv->identify_nonce, id, mac, &error))
     {
       g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
-
-      /* clear potentially non-functioning application_secret */
-      fpi_sdcp_device_unset_application_secret (self);
-
-      fpi_device_action_error (FP_DEVICE (self),
-                               fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                         "SDCP AuthorizedIdentity verification "
-                                                         "failed: %s",
-                                                         error->message));
+      fpi_device_action_error (FP_DEVICE (self), error);
       return;
     }
 

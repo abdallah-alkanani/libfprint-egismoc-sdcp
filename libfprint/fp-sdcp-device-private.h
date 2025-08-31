@@ -36,7 +36,6 @@ void fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,
                                              GBytes      **application_secret);
 void fpi_sdcp_device_set_application_secret (FpSdcpDevice *self,
                                              GBytes       *application_secret);
-void fpi_sdcp_device_unset_application_secret (FpSdcpDevice *self);
 
 void fpi_sdcp_device_open (FpSdcpDevice *self);
 void fpi_sdcp_device_connect (FpSdcpDevice *self);
