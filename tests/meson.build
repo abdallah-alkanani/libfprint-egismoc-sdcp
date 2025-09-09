@@ -19,6 +19,7 @@ envs.set('FP_DRIVERS_ALLOWLIST', ':'.join([
     'virtual_image',
     'virtual_device',
     'virtual_device_storage',
+    'virtual_sdcp',
 ]))
 
 envs.set('FP_PRINTS_PATH', meson.project_source_root() / 'examples' / 'prints')
@@ -91,6 +92,7 @@ if get_option('introspection')
     virtual_devices_tests = [
         'virtual-image',
         'virtual-device',
+        'virtual-sdcp',
     ]
 
     unittest_inspector = find_program('unittest_inspector.py')
@@ -265,12 +267,7 @@ if 'virtual_image' in drivers
 endif
 
 if 'sdcp' in driver_helpers
-    test_util_sources += [
-        'test-sdcp-device-fake.c',
-        'test-sdcp-utils.c',
-    ]
     unit_tests += [
-        'fp-sdcp-device',
         'fpi-sdcp',
     ]
 endif

@@ -20,7 +20,55 @@
 #define FP_COMPONENT "test_fpi_sdcp"
 #include "fpi-log.h"
 
-#include "test-sdcp-utils.h"
+#include "fpi-sdcp.h"
+#include "fpi-sdcp-device.h"
+
+/* We can re-use the test payloads from virtual-sdcp */
+#include "drivers/virtual-sdcp.h"
+
+/******************************************************************************/
+
+static const guint8 from_hex_map[] = {
+  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,   // 01234567
+  0x08, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   // 89:;<=>?
+  0x00, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,         // @abcdef
+};
+
+static GBytes *
+g_bytes_from_hex (const gchar *hex)
+{
+  g_autoptr(GBytes) res = NULL;
+  guint8 b0, b1;
+  gsize bytes_len = strlen (hex) / 2;
+  guint8 *bytes = g_malloc0 (bytes_len);
+
+  for (int i = 0; i < strlen (hex) - 1; i += 2)
+    {
+      b0 = ((guint8) hex[i + 0] & 0x1F) ^ 0x10;
+      b1 = ((guint8) hex[i + 1] & 0x1F) ^ 0x10;
+      bytes[i / 2] = (guint8) (from_hex_map[b0] << 4) | from_hex_map[b1];
+    }
+
+  res = g_bytes_new_take (bytes, bytes_len);
+
+  return g_steal_pointer (&res);
+}
+
+static FpiSdcpClaim *
+get_fake_sdcp_claim (void)
+{
+  FpiSdcpClaim *claim = g_new0 (FpiSdcpClaim, 1);
+
+  claim->model_certificate = g_bytes_from_hex (model_certificate_hex);
+  claim->device_public_key = g_bytes_from_hex (device_public_key_hex);
+  claim->firmware_public_key = g_bytes_from_hex (firmware_public_key_hex);
+  claim->firmware_hash = g_bytes_from_hex (firmware_hash_hex);
+  claim->model_signature = g_bytes_from_hex (model_signature_hex);
+  claim->device_signature = g_bytes_from_hex (device_signature_hex);
+  return g_steal_pointer (&claim);
+}
+
+/******************************************************************************/
 
 static void
 test_generate_enrollment_id (void)
@@ -29,7 +77,7 @@ test_generate_enrollment_id (void)
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) application_secret = g_bytes_from_hex (application_secret_hex);
   g_autoptr(GBytes) nonce = g_bytes_from_hex (enrollment_nonce_hex);
-  g_autoptr(GBytes) expected_id = g_bytes_from_hex (enrollment_enrollment_id_hex);
+  g_autoptr(GBytes) expected_id = g_bytes_from_hex (enrollment_id_hex);
 
   id = fpi_sdcp_generate_enrollment_id (application_secret, nonce, &error);
 
@@ -49,7 +97,7 @@ test_verify_identify (void)
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) application_secret = g_bytes_from_hex (application_secret_hex);
   g_autoptr(GBytes) nonce = g_bytes_from_hex (identify_nonce_hex);
-  g_autoptr(GBytes) id = g_bytes_from_hex (identify_enrollment_id_hex);
+  g_autoptr(GBytes) id = g_bytes_from_hex (enrollment_id_hex);
   g_autoptr(GBytes) mac = g_bytes_from_hex (identify_mac_hex);
 
   g_assert_true (fpi_sdcp_verify_identify (application_secret, nonce, id, mac, &error));
@@ -78,7 +126,7 @@ test_verify_connect (void)
   g_autoptr(GBytes) host_random = g_bytes_from_hex (host_random_hex);
   g_autoptr(GBytes) device_random = g_bytes_from_hex (device_random_hex);
   g_autoptr(GBytes) connect_mac = g_bytes_from_hex (connect_mac_hex);
-  FpiSdcpClaim *claim = sdcp_test_claim ();
+  FpiSdcpClaim *claim = get_fake_sdcp_claim ();
 
   g_autoptr(GBytes) expected_application_secret = g_bytes_from_hex (application_secret_hex);
 

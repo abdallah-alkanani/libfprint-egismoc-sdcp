@@ -1,5 +1,6 @@
 /*
- * Secure Device Connection Protocol (SDCP) support test utils
+ * Virtual driver test payloads for SDCP device debugging
+ *
  * Copyright (C) 2025 Joshua Grisham <josh@joshuagrisham.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -19,11 +20,7 @@
 
 #pragma once
 
-#include "fpi-log.h"
-#include "fpi-sdcp.h"
-#include "fpi-sdcp-device.h"
-
-/******************************************************************************/
+#include "fpi-compat.h"
 
 /* host keys */
 
@@ -84,19 +81,12 @@ static const gchar application_secret_hex[] = "13330ba3135ecf5dc71cede01a8865407
 static const gchar reconnect_random_hex[] = "8a7451c1d3a8dca1c1330ca50d73454b351a49f46c8e9dcee15c964d295c31c9";
 static const gchar reconnect_mac_hex[]    = "bf3f3bb3bd6ecb2784c160f526f7bc3b3ca8faf5557194c48e0024a0493903c7";
 
-/* test verify_identify values */
-
-static const gchar identify_nonce_hex[]         = "3a1b506f5bec089059acefb9b44dfbdea7a599ee9aa267e5252664d60b798053";
-static const gchar identify_enrollment_id_hex[] = "ef2055244e49c39beabdac49fdf4ee418605d195da23b202ba219a13831ae621";
-static const gchar identify_mac_hex[]           = "f0a5c5f261c2fe937d8b113857bc629cd07ca88edf991f69ca6fae5c332390f6";
-
 /* test enrollment_id values */
 
-static const gchar enrollment_nonce_hex[]         = "c2101c44c9a667bba397e81f48b143398603e2c9335a68b409e1dbe71e005ca2";
-static const gchar enrollment_enrollment_id_hex[] = "67109dc70a216331f1580ddac601915929c1ff6c9bcba6544ba572c660c3d91e";
+static const gchar enrollment_nonce_hex[] = "c2101c44c9a667bba397e81f48b143398603e2c9335a68b409e1dbe71e005ca2";
+static const gchar enrollment_id_hex[]    = "67109dc70a216331f1580ddac601915929c1ff6c9bcba6544ba572c660c3d91e";
 
-/******************************************************************************/
+/* test verify_identify values */
 
-GBytes *g_bytes_from_hex (const gchar *hex);
-
-FpiSdcpClaim *sdcp_test_claim (void);
+static const gchar identify_nonce_hex[] = "3a1b506f5bec089059acefb9b44dfbdea7a599ee9aa267e5252664d60b798053";
+static const gchar identify_mac_hex[]   = "53a723eef40713094a90c5ef9996cbd6ba268e30676cd7107705a6c3e3e1eff9";
