@@ -277,19 +277,20 @@ void
 fpi_sdcp_device_enroll (FpSdcpDevice *self)
 {
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+
+  g_autoptr(GBytes) application_secret = NULL;
   FpPrint *print;
 
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
+  fpi_sdcp_device_get_application_secret (self, &application_secret);
+  g_return_if_fail (application_secret != NULL);
 
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
 
   fpi_print_set_device_stored (print, FALSE);
   g_object_set (print, "fpi-data", NULL, NULL);
 
-  /* For enrollment, all we need to do is start the process. But just to be sure,
-   * clear a bit of internal state.
-   */
   cls->enroll (self);
 }
 
@@ -298,13 +299,16 @@ fpi_sdcp_device_identify (FpSdcpDevice *self)
 {
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+
+  g_autoptr(GBytes) application_secret = NULL;
   FpiDeviceAction action;
   GError *error = NULL;
 
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   action = fpi_device_get_current_action (FP_DEVICE (self));
-
   g_return_if_fail (action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_VERIFY);
+  fpi_sdcp_device_get_application_secret (self, &application_secret);
+  g_return_if_fail (application_secret != NULL);
 
   g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
 
