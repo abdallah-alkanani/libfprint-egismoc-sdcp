@@ -168,6 +168,7 @@ endian_independent_drivers = virtual_drivers + [
     'aes4000',
     'egis0570',
     'egismoc',
+    'egis_etu905',
     'elanmoc',
     'etes603',
     'focaltech_moc',

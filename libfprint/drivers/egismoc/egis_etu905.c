@@ -43,6 +43,7 @@ G_DEFINE_TYPE (FpiDeviceEgisEtu905, fpi_device_egis_etu905, FP_TYPE_DEVICE);
 
 static const FpIdEntry egis_etu905_id_table[] = {
   { .vid = 0x1c7a, .pid = 0x05ae, .driver_data = EGIS_ETU905_DRIVER_CHECK_PREFIX_TYPE1 },
+  { .vid = 0x1c7a, .pid = 0x9201, .driver_data = EGIS_ETU905_DRIVER_CHECK_PREFIX_TYPE1 },
   { .vid = 0,      .pid = 0,      .driver_data = 0 }
 };
 
@@ -54,7 +55,16 @@ typedef void (*SynCmdMsgCallback) (FpDevice *device,
 typedef struct egis_etu905_command_data
 {
   SynCmdMsgCallback callback;
+  guchar           *buffer_in;
+  gsize             length_in;
 } CommandData;
+
+static void
+egis_etu905_command_data_free (CommandData *data)
+{
+  g_free (data->buffer_in);
+  g_free (data);
+}
 
 typedef struct egis_etu905_enroll_print
 {
@@ -71,11 +81,7 @@ egis_etu905_finger_on_sensor_cb (FpiUsbTransfer *transfer,
   fp_dbg ("Finger on sensor callback");
   fpi_device_report_finger_status (device, FP_FINGER_STATUS_PRESENT);
 
-  g_return_if_fail (transfer->ssm);
-  if (error)
-    fpi_ssm_mark_failed (transfer->ssm, error);
-  else
-    fpi_ssm_next_state (transfer->ssm);
+  fpi_ssm_usb_transfer_cb (transfer, device, userdata, error);
 }
 
 static void
@@ -137,8 +143,9 @@ egis_etu905_task_ssm_done (FpiSsm   *ssm,
                            FpDevice *device,
                            GError   *error)
 {
-  fp_dbg ("Task SSM done");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
+
+  fp_dbg ("Task SSM done");
 
   /* task_ssm is going to be freed by completion of SSM */
   g_assert (!self->task_ssm || self->task_ssm == ssm);
@@ -165,14 +172,19 @@ egis_etu905_commit_start_cb (FpDevice *device,
     fpi_ssm_jump_to_state (self->task_ssm, ENROLL_COMMIT);
 }
 
+/*
+ * Generic callback for commands that don't need special handling on success.
+ * Advances the task SSM to the next state on success, or marks it failed on error.
+ */
 static void
 egis_etu905_task_ssm_next_state_cb (FpDevice *device,
                                     guchar   *buffer_in,
                                     gsize     length_in,
                                     GError   *error)
 {
-  fp_dbg ("Task SSM next state callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
+
+  fp_dbg ("Task SSM next state callback");
 
   if (error)
     fpi_ssm_mark_failed (self->task_ssm, error);
@@ -186,10 +198,7 @@ egis_etu905_cmd_receive_cb (FpiUsbTransfer *transfer,
                             gpointer        userdata,
                             GError         *error)
 {
-  g_autofree guchar *buffer = NULL;
   CommandData *data = userdata;
-  SynCmdMsgCallback callback;
-  gssize actual_length;
 
   fp_dbg ("Command receive callback");
 
@@ -205,27 +214,20 @@ egis_etu905_cmd_receive_cb (FpiUsbTransfer *transfer,
       return;
     }
 
-  /* Let's complete the previous ssm and then handle the callback, so that
-   * we are sure that we won't start a transfer or a new command while there is
-   * another one still ongoing
-   */
-  callback = data->callback;
-  buffer = g_steal_pointer (&transfer->buffer);
-  actual_length = transfer->actual_length;
+  /* Store the response data and let the cmd_ssm_done callback invoke
+   * the actual callback with the stored data */
+  data->buffer_in = g_steal_pointer (&transfer->buffer);
+  data->length_in = transfer->actual_length;
 
   fpi_ssm_mark_completed (transfer->ssm);
-
-  if (callback)
-    callback (device, buffer, actual_length, NULL);
 }
 
 static void
 egis_etu905_cmd_run_state (FpiSsm   *ssm,
                            FpDevice *device)
 {
-  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-
   g_autoptr(FpiUsbTransfer) transfer = NULL;
+  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
@@ -258,6 +260,10 @@ egis_etu905_cmd_run_state (FpiSsm   *ssm,
     }
 }
 
+/*
+ * Command SSM done callback.
+ * Always invokes the callback with stored data on success or error.
+ */
 static void
 egis_etu905_cmd_ssm_done (FpiSsm   *ssm,
                           FpDevice *device,
@@ -273,8 +279,13 @@ egis_etu905_cmd_ssm_done (FpiSsm   *ssm,
   self->cmd_ssm = NULL;
   self->cmd_transfer = NULL;
 
-  if (error && data && data->callback)
-    data->callback (device, NULL, 0, g_steal_pointer (&local_error));
+  if (data && data->callback)
+    {
+      data->callback (device,
+                      g_steal_pointer (&data->buffer_in),
+                      data->length_in,
+                      g_steal_pointer (&local_error));
+    }
 }
 
 /*
@@ -357,7 +368,8 @@ egis_etu905_exec_cmd (FpDevice         *device,
 
   data = g_new0 (CommandData, 1);
   data->callback = callback;
-  fpi_ssm_set_data (self->cmd_ssm, g_steal_pointer (&data), g_free);
+  fpi_ssm_set_data (self->cmd_ssm, g_steal_pointer (&data),
+                    (GDestroyNotify) egis_etu905_command_data_free);
 
   if (!written)
     {
@@ -414,9 +426,8 @@ egis_etu905_set_print_data (FpPrint     *print,
 static GPtrArray *
 egis_etu905_get_enrolled_prints (FpDevice *device)
 {
-  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-
   g_autoptr(GPtrArray) result = g_ptr_array_new_with_free_func (g_object_unref);
+  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
 
   if (!self->enrolled_ids)
     return g_steal_pointer (&result);
@@ -437,8 +448,9 @@ egis_etu905_list_fill_enrolled_ids_cb (FpDevice *device,
                                        gsize     length_in,
                                        GError   *error)
 {
-  fp_dbg ("List callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
+
+  fp_dbg ("List callback");
 
   if (error)
     {
@@ -464,17 +476,15 @@ egis_etu905_list_fill_enrolled_ids_cb (FpDevice *device,
   while (read)
     {
       const guint8 *data;
-      gchar *print_id = NULL;
+      g_autofree gchar *print_id = NULL;
 
       read &= fpi_byte_reader_get_data (&reader, EGIS_ETU905_FINGERPRINT_DATA_SIZE,
                                         &data);
       if (!read)
         break;
 
-      print_id = g_new0 (gchar, EGIS_ETU905_FINGERPRINT_DATA_SIZE);
-      memcpy (print_id, data, EGIS_ETU905_FINGERPRINT_DATA_SIZE);
+      print_id = g_memdup2 (data, EGIS_ETU905_FINGERPRINT_DATA_SIZE);
       g_ptr_array_add (self->enrolled_ids, g_steal_pointer (&print_id));
-      g_free (print_id);
     }
 
   fp_info ("Number of currently enrolled fingerprints on the device is %d",
@@ -895,7 +905,6 @@ egis_etu905_enroll_begin_cb (FpDevice *device,
 {
   fp_dbg ("Enroll begin callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-  FpiByteReader reader;
 
   if (error)
     {
@@ -903,14 +912,19 @@ egis_etu905_enroll_begin_cb (FpDevice *device,
       return;
     }
 
+  FpiByteReader reader;
 
   fpi_byte_reader_init (&reader, buffer_in, length_in);
 
   fpi_byte_reader_set_pos (&reader, EGIS_ETU905_LIST_RESPONSE_PREFIX_SIZE);
-  const guint8 *data = NULL;
-  fpi_byte_reader_get_data (&reader, EGIS_ETU905_FINGERPRINT_DATA_SIZE, &data);
 
-  memcpy (self->sid, data, EGIS_ETU905_FINGERPRINT_DATA_SIZE);
+  const guint8 *data = NULL;
+
+  fpi_byte_reader_get_data (&reader, EGIS_ETU905_FINGERPRINT_DATA_SIZE,
+                            &data);
+
+  if (data)
+    memcpy (self->sid, data, EGIS_ETU905_FINGERPRINT_DATA_SIZE);
 
   fpi_ssm_next_state (self->task_ssm);
 }
@@ -1129,9 +1143,10 @@ egis_etu905_enroll_run_state (FpiSsm   *ssm,
 static void
 egis_etu905_enroll (FpDevice *device)
 {
-  fp_dbg ("Enroll");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
   EnrollPrint *enroll_print = g_new0 (EnrollPrint, 1);
+
+  fp_dbg ("Enroll");
 
   fpi_device_get_enroll_data (device, &enroll_print->print);
   enroll_print->stage = 0;
@@ -1428,7 +1443,7 @@ static void
 egis_etu905_dev_init_handler (FpiSsm   *ssm,
                               FpDevice *device)
 {
-  g_autoptr(FpiUsbTransfer) transfer = fpi_usb_transfer_new (device);
+  g_autoptr(FpiUsbTransfer) transfer = NULL;
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
@@ -1446,6 +1461,7 @@ egis_etu905_dev_init_handler (FpiSsm   *ssm,
       g_assert_not_reached ();
     }
 
+  transfer = fpi_usb_transfer_new (device);
   transfer->ssm = ssm;
   transfer->short_is_error = TRUE;
   fpi_usb_transfer_submit (g_steal_pointer (&transfer),
@@ -1525,20 +1541,18 @@ egis_etu905_open (FpDevice *device)
 {
   fp_dbg ("Opening device");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-  GError *error = NULL;
-
-  self->interrupt_cancellable = g_cancellable_new ();
+  g_autoptr(GError) error = NULL;
 
   if (!g_usb_device_reset (fpi_device_get_usb_device (device), &error))
     {
-      fpi_device_open_complete (device, error);
+      fpi_device_open_complete (device, g_steal_pointer (&error));
       return;
     }
 
   if (!g_usb_device_claim_interface (fpi_device_get_usb_device (device),
                                      0, 0, &error))
     {
-      fpi_device_open_complete (device, error);
+      fpi_device_open_complete (device, g_steal_pointer (&error));
       return;
     }
 
@@ -1571,16 +1585,16 @@ egis_etu905_suspend (FpDevice *device)
 static void
 egis_etu905_close (FpDevice *device)
 {
+  g_autoptr(GError) error = NULL;
   fp_dbg ("Closing device");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-  GError *error = NULL;
 
   egis_etu905_cancel (device);
   g_clear_object (&self->interrupt_cancellable);
 
   g_usb_device_release_interface (fpi_device_get_usb_device (device),
                                   0, 0, &error);
-  fpi_device_close_complete (device, error);
+  fpi_device_close_complete (device, g_steal_pointer (&error));
 }
 
 static void

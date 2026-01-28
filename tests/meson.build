@@ -55,6 +55,7 @@ drivers_tests = [
     'nb1010',
     'egis0570',
     'egismoc',
+    'egis_etu905',
     'egismoc-05a1',
     'egismoc-0586',
     'egismoc-0587',
