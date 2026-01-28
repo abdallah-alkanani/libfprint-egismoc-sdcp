@@ -131,6 +131,7 @@ default_drivers = [
     'etes603',
     'egis0570',
     'egismoc',
+    'egis_etu905',
     'vcom5s',
     'synaptics',
     'elan',
