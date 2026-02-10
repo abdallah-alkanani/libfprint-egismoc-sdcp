@@ -7,6 +7,7 @@ include:
   - remote: 'https://gitlab.gnome.org/GNOME/citemplates/-/raw/71e636e012ae0ab04c5e0fe40ca73ada91ae6bde/flatpak/flatpak_ci_initiative.yml'
 
 default:
+  interruptible: true
   # Auto-retry jobs in case of infra failures
   retry:
     max: 1
