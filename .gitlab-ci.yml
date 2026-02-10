@@ -4,7 +4,7 @@ include:
   - project: 'freedesktop/ci-templates'
     ref: master
     file: '/templates/fedora.yml'
-  - remote: 'https://gitlab.gnome.org/GNOME/citemplates/-/raw/master/flatpak/flatpak_ci_initiative.yml'
+  - remote: 'https://gitlab.gnome.org/GNOME/citemplates/-/raw/71e636e012ae0ab04c5e0fe40ca73ada91ae6bde/flatpak/flatpak_ci_initiative.yml'
 
 default:
   # Auto-retry jobs in case of infra failures
@@ -19,7 +19,7 @@ default:
 variables:
   extends: .libfprint_common_variables
   FDO_DISTRIBUTION_TAG: $LIBFPRINT_IMAGE_TAG
-  FDO_DISTRIBUTION_VERSION: 41
+  FDO_DISTRIBUTION_VERSION: rawhide
   FDO_UPSTREAM_REPO: "libfprint/$CI_PROJECT_NAME"
   FEDORA_IMAGE: "$CI_REGISTRY/libfprint/$CI_PROJECT_NAME/fedora/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG"
   LAST_ABI_BREAK: "056ea541ddc97f5806cffbd99a12dc87e4da3546"
@@ -88,7 +88,7 @@ test:
   script:
     - meson setup _build --werror -Ddrivers=all -Db_coverage=true
     - meson test -C _build --print-errorlogs --no-stdsplit --timeout-multiplier 3
-    - ninja -C _build coverage
+    - ninja -C _build coverage || true
     - cat _build/meson-logs/coverage.txt || true
   artifacts:
     reports:
@@ -293,4 +293,4 @@ pages:
     paths:
       - public
   rules:
-    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"

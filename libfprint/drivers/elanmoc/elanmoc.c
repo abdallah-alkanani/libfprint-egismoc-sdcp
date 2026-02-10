@@ -36,6 +36,9 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x04f3,  .pid = 0x0c9d,  },
   { .vid = 0x04f3,  .pid = 0x0c9f,  },
   { .vid = 0x04f3,  .pid = 0x0ca3,  },
+  { .vid = 0x04f3,  .pid = 0x0ca7,  },
+  { .vid = 0x04f3,  .pid = 0x0ca8,  },
+  { .vid = 0x04f3,  .pid = 0x0cb0,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 
@@ -132,10 +135,10 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
 }
 
 typedef enum {
-  FP_CMD_SEND = 0,
-  FP_CMD_GET,
-  FP_CMD_NUM_STATES,
-} FpCmdState;
+  ELAN_MOC_CMD_SEND = 0,
+  ELAN_MOC_CMD_GET,
+  ELAN_MOC_CMD_NUM_STATES,
+} ElanMocCmdState;
 
 static void
 fp_cmd_run_state (FpiSsm   *ssm,
@@ -146,7 +149,7 @@ fp_cmd_run_state (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
-    case FP_CMD_SEND:
+    case ELAN_MOC_CMD_SEND:
       if (self->cmd_transfer)
         {
           self->cmd_transfer->ssm = ssm;
@@ -162,7 +165,7 @@ fp_cmd_run_state (FpiSsm   *ssm,
         }
       break;
 
-    case FP_CMD_GET:
+    case ELAN_MOC_CMD_GET:
       if (self->cmd_len_in == 0)
         {
           CommandData *data = fpi_ssm_get_data (ssm);
@@ -229,7 +232,7 @@ elanmoc_get_cmd (FpDevice *device, guint8 *buffer_out,
 
   self->cmd_ssm = fpi_ssm_new (FP_DEVICE (self),
                                fp_cmd_run_state,
-                               FP_CMD_NUM_STATES);
+                               ELAN_MOC_CMD_NUM_STATES);
 
   fpi_ssm_set_data (self->cmd_ssm, data, (GDestroyNotify) fp_cmd_ssm_done_data_free);
 

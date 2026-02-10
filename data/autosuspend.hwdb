@@ -80,8 +80,10 @@ usb:v1C7Ap0571*
 # Supported by libfprint driver egismoc
 usb:v1C7Ap0582*
 usb:v1C7Ap0583*
+usb:v1C7Ap0584*
 usb:v1C7Ap0586*
 usb:v1C7Ap0587*
+usb:v1C7Ap0588*
 usb:v1C7Ap05A1*
  ID_AUTOSUSPEND=1
  ID_PERSIST=0
@@ -163,6 +165,9 @@ usb:v04F3p0C99*
 usb:v04F3p0C9D*
 usb:v04F3p0C9F*
 usb:v04F3p0CA3*
+usb:v04F3p0CA7*
+usb:v04F3p0CA8*
+usb:v04F3p0CB0*
  ID_AUTOSUSPEND=1
  ID_PERSIST=0
 
@@ -174,16 +179,19 @@ usb:v1C7Ap0603*
 # Supported by libfprint driver focaltech_moc
 usb:v2808p9E48*
 usb:v2808pD979*
+usb:v2808pA27A*
 usb:v2808pA959*
 usb:v2808pA99A*
 usb:v2808pA57A*
 usb:v2808pA78A*
+usb:v2808p1579*
  ID_AUTOSUSPEND=1
  ID_PERSIST=0
 
 # Supported by libfprint driver fpcmoc
 usb:v10A5pFFE0*
 usb:v10A5pA305*
+usb:v10A5pA306*
 usb:v10A5pDA04*
 usb:v10A5pD805*
 usb:v10A5pD205*
@@ -226,6 +234,7 @@ usb:v27C6p659C*
 usb:v27C6p6A94*
 usb:v27C6p6512*
 usb:v27C6p689A*
+usb:v27C6p66A9*
  ID_AUTOSUSPEND=1
  ID_PERSIST=0
 
@@ -237,6 +246,7 @@ usb:v298Dp1010*
 # Supported by libfprint driver realtek
 usb:v0BDAp5813*
 usb:v0BDAp5816*
+usb:v2541pFA03*
  ID_AUTOSUSPEND=1
  ID_PERSIST=0
 
@@ -246,6 +256,7 @@ usb:v06CBp00C2*
 usb:v06CBp00C4*
 usb:v06CBp00C6*
 usb:v06CBp00DF*
+usb:v06CBp00E9*
 usb:v06CBp00F0*
 usb:v06CBp00F9*
 usb:v06CBp00FC*
@@ -255,16 +266,21 @@ usb:v06CBp0104*
 usb:v06CBp0106*
 usb:v06CBp0107*
 usb:v06CBp0108*
+usb:v06CBp0109*
+usb:v06CBp010A*
 usb:v06CBp0123*
 usb:v06CBp0124*
 usb:v06CBp0126*
 usb:v06CBp0129*
 usb:v06CBp015F*
 usb:v06CBp0168*
+usb:v06CBp0169*
 usb:v06CBp016C*
 usb:v06CBp0173*
 usb:v06CBp0174*
 usb:v06CBp019D*
+usb:v06CBp019F*
+usb:v06CBp01A0*
  ID_AUTOSUSPEND=1
  ID_PERSIST=0
 
@@ -380,7 +396,6 @@ usb:v06CBp00DA*
 usb:v06CBp00DC*
 usb:v06CBp00E4*
 usb:v06CBp00E7*
-usb:v06CBp00E9*
 usb:v06CBp00FD*
 usb:v06CBp00FF*
 usb:v0A5Cp5801*
@@ -424,7 +439,6 @@ usb:v16D1p1027*
 usb:v1C7Ap0300*
 usb:v1C7Ap0575*
 usb:v1C7Ap0576*
-usb:v1C7Ap0584*
 usb:v1C7Ap0577*
 usb:v1C7Ap057E*
 usb:v2541p0236*

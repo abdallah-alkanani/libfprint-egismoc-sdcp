@@ -1,6 +1,22 @@
 This file lists notable changes in each release. For the full history of all
 changes, see ChangeLog.
 
+2026-02-10: v1.94.10 release
+
+Highlights:
+  * synaptics: Add USB reset in probe to recover stall condition
+  * synaptics: New PIDs 0x0169, 0x019F, 0x00E9, 0x01A0, 0x0109, 0x010A
+  * goodixmoc: New PID 0x66A9
+  * goodixmoc: Fix crash in exit callback handler
+  * fpcmoc: New PID 0xA306
+  * fpcmoc: Fix interrupt cancellable leak
+  * elanmoc: New PIDs 0x0CA7, 0x0CA8, 0x0CB0
+  * egismoc: New PIDs 0x0584, 0x0588
+  * focaltech_moc: New PIDs 0xA27A, 0x1579
+  * realtek: New PID 0xFA03
+  * fp-device: Clarify getter for open property
+  * libfprint: Use fatal-warnings on g-i-scanner
+
 2025-02-20: v1.94.9 release
 
 Highlights:
