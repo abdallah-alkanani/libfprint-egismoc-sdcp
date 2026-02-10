@@ -255,6 +255,7 @@ libnbis = static_library('nbis',
         '-Wno-discarded-qualifiers',
         '-Wno-array-bounds',
         '-Wno-array-parameter',
+        '-Wno-unused-but-set-variable',
     ]),
     install: false)
 
