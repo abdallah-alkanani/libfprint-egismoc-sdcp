@@ -95,13 +95,12 @@ static gsize cmd_sensor_check_len = sizeof (cmd_sensor_check) / sizeof (cmd_sens
 
 static guchar cmd_sensor_identify[] = {0x00, 0x00, 0x00, 0x04, 0x50, 0x17, 0x01, 0x01};
 static gsize cmd_sensor_identify_len = sizeof (cmd_sensor_identify) / sizeof (cmd_sensor_identify[0]);
+
 static guchar rsp_identify_match_suffix[] = {0x90, 0x00};
 static gsize rsp_identify_match_suffix_len = sizeof (rsp_identify_match_suffix) / sizeof (rsp_identify_match_suffix[0]);
+
 static guchar rsp_identify_notmatch_suffix[] = {0x90, 0x04};
 static gsize rsp_identify_notmatch_suffix_len = sizeof (rsp_identify_notmatch_suffix) / sizeof (rsp_identify_notmatch_suffix[0]);
-
-static guchar cmd_sensor_enroll[] = {0x00, 0x00, 0x00, 0x04, 0x50, 0x17, 0x01, 0x00};
-static gsize cmd_sensor_enroll_len = sizeof (cmd_sensor_enroll) / sizeof (cmd_sensor_enroll[0]);
 
 static guchar cmd_enroll_starting[] = {0x00, 0x00, 0x00, 0x07, 0x50, 0x16, 0x01, 0x00, 0x00, 0x00, 0x20};
 static gsize cmd_enroll_starting_len = sizeof (cmd_enroll_starting) / sizeof (cmd_enroll_starting[0]);
@@ -111,6 +110,10 @@ static gsize cmd_sensor_start_capture_len = sizeof (cmd_sensor_start_capture) / 
 
 static guchar cmd_read_capture[] = {0x00, 0x00, 0x00, 0x07, 0x50, 0x16, 0x02, 0x02, 0x00, 0x00, 0x02};
 static gsize cmd_read_capture_len = sizeof (cmd_read_capture) / sizeof (cmd_read_capture[0]);
+
+static guchar cmd_duplicate_check[] = {0x00, 0x00, 0x00, 0x04, 0x50, 0x16, 0x05, 0x00};
+static gsize cmd_duplicate_check_len = sizeof (cmd_duplicate_check) / sizeof (cmd_duplicate_check[0]);
+
 static guchar rsp_read_success_prefix[] = {0x00, 0x00, 0x00, 0x04};
 static gsize rsp_read_success_prefix_len = sizeof (rsp_read_success_prefix) / sizeof (rsp_read_success_prefix[0]);
 static guchar rsp_read_success_suffix[] = {0x90, 0x00};
@@ -177,18 +180,12 @@ typedef enum {
 } IdentifyStates;
 
 typedef enum {
-  ENROLL_GET_ENROLLED_IDS,
-  ENROLL_CHECK_ENROLLED_NUM,
-  ENROLL_SENSOR_RESET,
-  ENROLL_SENSOR_ENROLL,
-  ENROLL_WAIT_FINGER,
-  ENROLL_SENSOR_CHECK,
-  ENROLL_CHECK,
   ENROLL_START,
   ENROLL_CAPTURE_SENSOR_RESET,
   ENROLL_CAPTURE_SENSOR_START_CAPTURE,
   ENROLL_CAPTURE_WAIT_FINGER,
   ENROLL_CAPTURE_READ_RESPONSE,
+  ENROLL_DUPLICATE_CHECK,
   ENROLL_COMMIT_START,
   ENROLL_COMMIT,
   ENROLL_COMMIT_SENSOR_RESET,

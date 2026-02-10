@@ -156,7 +156,7 @@ egis_etu905_commit_start_cb (FpDevice *device,
                              gsize     length_in,
                              GError   *error)
 {
-  fp_dbg ("Task SSM next state callback");
+  fp_dbg ("Task SSM commit start callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
 
   if (error)
@@ -862,12 +862,12 @@ egis_etu905_read_capture_cb (FpDevice *device,
 }
 
 static void
-egis_etu905_enroll_check_cb (FpDevice *device,
-                             guchar   *buffer_in,
-                             gsize     length_in,
-                             GError   *error)
+egis_etu905_enroll_duplicate_check_cb (FpDevice *device,
+                                       guchar   *buffer_in,
+                                       gsize     length_in,
+                                       GError   *error)
 {
-  fp_dbg ("Enroll check callback");
+  fp_dbg ("Task SSM enroll duplicate check callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
 
   if (error)
@@ -881,7 +881,7 @@ egis_etu905_enroll_check_cb (FpDevice *device,
                                             length_in,
                                             rsp_check_not_yet_enrolled_suffix,
                                             rsp_check_not_yet_enrolled_suffix_len))
-    fpi_ssm_next_state (self->task_ssm);
+    fpi_ssm_jump_to_state (self->task_ssm, ENROLL_COMMIT_START);
   else
     egis_etu905_enroll_status_report (device, NULL, ENROLL_STATUS_DUPLICATE,
                                       fpi_device_error_new (FP_DEVICE_ERROR_DATA_DUPLICATE));
@@ -1046,7 +1046,6 @@ egis_etu905_enroll_run_state (FpiSsm   *ssm,
 {
   g_auto(FpiByteWriter) writer = {0};
   EgismocSidData sid_data = {0};
-  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
   EnrollPrint *enroll_print = fpi_ssm_get_data (ssm);
   g_autofree guchar *payload = NULL;
   gsize payload_length = 0;
@@ -1055,47 +1054,6 @@ egis_etu905_enroll_run_state (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
-    case ENROLL_GET_ENROLLED_IDS:
-      /* get enrolled_ids from device for use in check stages below */
-      egis_etu905_exec_cmd (device, cmd_list, cmd_list_len,
-                            NULL, egis_etu905_list_fill_enrolled_ids_cb);
-      break;
-
-    case ENROLL_CHECK_ENROLLED_NUM:
-      if (self->enrolled_ids->len >= EGIS_ETU905_MAX_ENROLL_NUM)
-        {
-          egis_etu905_enroll_status_report (device, enroll_print, ENROLL_STATUS_DEVICE_FULL,
-                                            fpi_device_error_new (FP_DEVICE_ERROR_DATA_FULL));
-          return;
-        }
-      fpi_ssm_next_state (ssm);
-      break;
-
-    case ENROLL_SENSOR_RESET:
-      egis_etu905_exec_cmd (device, cmd_sensor_reset, cmd_sensor_reset_len,
-                            NULL, egis_etu905_task_ssm_next_state_cb);
-      break;
-
-    case ENROLL_SENSOR_ENROLL:
-      egis_etu905_exec_cmd (device, cmd_sensor_enroll, cmd_sensor_enroll_len,
-                            NULL, egis_etu905_task_ssm_next_state_cb);
-      break;
-
-    case ENROLL_WAIT_FINGER:
-      egis_etu905_wait_finger_on_sensor (ssm, device);
-      break;
-
-    case ENROLL_SENSOR_CHECK:
-      egis_etu905_exec_cmd (device, cmd_sensor_check, cmd_sensor_check_len,
-                            NULL, egis_etu905_task_ssm_next_state_cb);
-      break;
-
-    case ENROLL_CHECK:
-      payload = egis_etu905_get_check_cmd (device, &payload_length);
-      egis_etu905_exec_cmd (device, g_steal_pointer (&payload), payload_length,
-                            g_free, egis_etu905_enroll_check_cb);
-      break;
-
     case ENROLL_START:
       egis_etu905_exec_cmd (device, cmd_enroll_starting, cmd_enroll_starting_len,
                             NULL, egis_etu905_enroll_begin_cb);
@@ -1119,6 +1077,11 @@ egis_etu905_enroll_run_state (FpiSsm   *ssm,
     case ENROLL_CAPTURE_READ_RESPONSE:
       egis_etu905_exec_cmd (device, cmd_read_capture, cmd_read_capture_len,
                             NULL, egis_etu905_read_capture_cb);
+      break;
+
+    case ENROLL_DUPLICATE_CHECK:
+      egis_etu905_exec_cmd (device, cmd_duplicate_check, cmd_duplicate_check_len,
+                            NULL, egis_etu905_enroll_duplicate_check_cb);
       break;
 
     case ENROLL_COMMIT_START:
