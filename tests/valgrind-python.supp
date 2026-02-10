@@ -95,3 +95,24 @@
    fun:realloc
    obj:/usr/lib/*/libpython3*.so.*
 }
+
+{
+   ignore__pygobject_possible_leaks
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   obj:/usr/lib*/python*/site-packages/gi/_gi.cpython-*.so
+   obj:/usr/lib*/libpython3.*.so.*
+}
+
+{
+   ignore__pygobject_instance_leaks
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:g_type_create_instance
+   fun:gi_info_new_full
+   ...
+   obj:/usr/lib*/python*/site-packages/gi/_gi.cpython-*.so
+   obj:/usr/lib*/libpython3.*.so.*
+}
