@@ -79,7 +79,7 @@ test_generate_enrollment_id (void)
   g_autoptr(GBytes) nonce = g_bytes_from_hex (enrollment_nonce_hex);
   g_autoptr(GBytes) expected_id = g_bytes_from_hex (enrollment_id_hex);
 
-  id = fpi_sdcp_generate_enrollment_id (application_secret, nonce, &error);
+  id = fpi_sdcp_generate_enrollment_id (application_secret, NULL, nonce, &error);
 
   fp_dbg ("id:");
   fp_dbg_hex_dump_gbytes (id);
@@ -100,7 +100,7 @@ test_verify_identify (void)
   g_autoptr(GBytes) id = g_bytes_from_hex (enrollment_id_hex);
   g_autoptr(GBytes) mac = g_bytes_from_hex (identify_mac_hex);
 
-  g_assert_true (fpi_sdcp_verify_identify (application_secret, nonce, id, mac, &error));
+  g_assert_true (fpi_sdcp_verify_identify (application_secret, NULL, nonce, id, mac, &error));
   g_assert_null (error);
 }
 
@@ -112,7 +112,7 @@ test_verify_reconnect (void)
   g_autoptr(GBytes) random = g_bytes_from_hex (reconnect_random_hex);
   g_autoptr(GBytes) mac = g_bytes_from_hex (reconnect_mac_hex);
 
-  g_assert_true (fpi_sdcp_verify_reconnect (application_secret, random, mac, &error));
+  g_assert_true (fpi_sdcp_verify_reconnect (application_secret, NULL, random, mac, &error));
   g_assert_null (error);
 }
 

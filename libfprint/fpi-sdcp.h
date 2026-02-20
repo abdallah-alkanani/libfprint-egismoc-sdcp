@@ -60,6 +60,9 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  * High level function which internally handles the derivation of all necessary
  * SDCP-related keys and secrets from the device's ConnectResponse and derives
  * the application secret for use with all other SDCP-related functions.
+ * The KDF and MAC labels used during key derivation are taken from the
+ * @claim label fields; %NULL fields fall back to the %SDCP_DEFAULT_LABEL_*
+ * constants.
  *
  * This function will also perform a validation of the ConnectResponse MAC and
  * optionally perform additional verifications based on the provided
@@ -82,7 +85,9 @@ gboolean fpi_sdcp_verify_connect (GBytes                        *host_private_ke
 /**
  * fpi_sdcp_verify_reconnect:
  * @application_secret: The host's derived application secret (s)
- * @random: The host-generated random sent to the device's Reconnect command (r)
+ * @label: HMAC label, or %NULL to use %SDCP_DEFAULT_LABEL_RECONNECT
+ * @random: The host-generated random sent to the device's Reconnect
+ *   command (r)
  * @mac: The MAC provided in the device's ReconnectResponse (m)
  * @error: (out): #GError in case the return value is %FALSE
  *
@@ -90,15 +95,18 @@ gboolean fpi_sdcp_verify_connect (GBytes                        *host_private_ke
  *
  * Returns: %TRUE if the ReconnectResponse is verified successfully
  **/
-gboolean fpi_sdcp_verify_reconnect (GBytes  *application_secret,
-                                    GBytes  *random,
-                                    GBytes  *mac,
-                                    GError **error);
+gboolean fpi_sdcp_verify_reconnect (GBytes      *application_secret,
+                                    const gchar *label,
+                                    GBytes      *random,
+                                    GBytes      *mac,
+                                    GError     **error);
 
 /**
  * fpi_sdcp_verify_identify:
  * @application_secret: The host's derived application secret (s)
- * @nonce: The host-generated nonce sent to the device's Identify command (n)
+ * @label: HMAC label, or %NULL to use %SDCP_DEFAULT_LABEL_IDENTIFY
+ * @nonce: The host-generated nonce sent to the device's Identify
+ *   command (n)
  * @id: The ID provided in the device's AuthorizedIdentity (id)
  * @mac: The MAC provided in the device's AuthorizedIdentity (m)
  * @error: (out): #GError in case the return value is %FALSE
@@ -107,17 +115,19 @@ gboolean fpi_sdcp_verify_reconnect (GBytes  *application_secret,
  *
  * Returns: %TRUE if the AuthorizedIdentity is verified successfully
  **/
-gboolean fpi_sdcp_verify_identify (GBytes  *application_secret,
-                                   GBytes  *nonce,
-                                   GBytes  *id,
-                                   GBytes  *mac,
-                                   GError **error);
+gboolean fpi_sdcp_verify_identify (GBytes      *application_secret,
+                                   const gchar *label,
+                                   GBytes      *nonce,
+                                   GBytes      *id,
+                                   GBytes      *mac,
+                                   GError     **error);
 
 /**
  * fpi_sdcp_generate_enrollment_id:
  * @application_secret: The host's derived application secret (s)
- * @nonce: The nonce received from the device in response to the EnrollBegin
- *   command (n)
+ * @label: HMAC label, or %NULL to use %SDCP_DEFAULT_LABEL_ENROLL
+ * @nonce: The nonce received from the device in response to the
+ *   EnrollBegin command (n)
  * @error: (out): #GError in case the return value is %NULL
  *
  * Generates a new id for use with the device's EnrollCommit command.
@@ -125,6 +135,7 @@ gboolean fpi_sdcp_verify_identify (GBytes  *application_secret,
  * Returns: A new #GBytes with the generated enrollment id of length
  * %SDCP_ENROLLMENT_ID_SIZE
  **/
-GBytes *fpi_sdcp_generate_enrollment_id (GBytes  *application_secret,
-                                         GBytes  *nonce,
-                                         GError **error);
+GBytes *fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
+                                         const gchar *label,
+                                         GBytes      *nonce,
+                                         GError     **error);

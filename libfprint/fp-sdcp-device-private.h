@@ -24,12 +24,16 @@
 
 typedef struct
 {
-  GBytes *host_private_key;
-  GBytes *host_public_key;
-  GBytes *host_random;
-  GBytes *reconnect_random;
-  GBytes *identify_nonce;
-  GBytes *data;
+  GBytes      *host_private_key;
+  GBytes      *host_public_key;
+  GBytes      *host_random;
+  GBytes      *reconnect_random;
+  GBytes      *identify_nonce;
+  GBytes      *data;
+
+  const gchar *reconnect_label;
+  const gchar *enroll_label;
+  const gchar *identify_label;
 } FpSdcpDevicePrivate;
 
 void fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,

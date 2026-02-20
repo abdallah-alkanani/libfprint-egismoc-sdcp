@@ -926,7 +926,11 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
   /* SDCP Connect: 5.ii. Derive master secret */
 
-  master_secret = fpi_sdcp_kdf (key_agreement, "master secret", host_random, device_random,
+  master_secret = fpi_sdcp_kdf (key_agreement,
+                                claim->master_secret_label ?
+                                claim->master_secret_label :
+                                SDCP_DEFAULT_LABEL_MASTER_SECRET,
+                                host_random, device_random,
                                 SDCP_MASTER_SECRET_SIZE, error);
   if (!master_secret)
     goto out_error;
@@ -936,7 +940,11 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
   /* SDCP Connect: 5.iii. Derive MAC secret and symetric key */
 
-  application_keys = fpi_sdcp_kdf (master_secret, "application keys", NULL, NULL,
+  application_keys = fpi_sdcp_kdf (master_secret,
+                                   claim->application_keys_label ?
+                                   claim->application_keys_label :
+                                   SDCP_DEFAULT_LABEL_APPLICATION_KEYS,
+                                   NULL, NULL,
                                    SDCP_APPLICATION_KEYS_SIZE, error);
   if (!application_keys)
     goto out_error;
@@ -962,7 +970,11 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   if (!claim_hash)
     goto out_error;
 
-  claim_mac = fpi_sdcp_mac (out_app_secret, "connect", claim_hash, NULL, error);
+  claim_mac = fpi_sdcp_mac (out_app_secret,
+                            claim->connect_label ?
+                            claim->connect_label :
+                            SDCP_DEFAULT_LABEL_CONNECT,
+                            claim_hash, NULL, error);
   if (!claim_mac)
     goto out_error;
 
@@ -1069,7 +1081,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
             goto out_error;
 
           if (!fpi_sdcp_verify_signature (device_public_pkey,
-                                          "\xC0\x01",
+                                          SDCP_DEVICE_SIGNATURE_HEADER,
                                           claim->firmware_hash,
                                           claim->firmware_public_key,
                                           claim->device_signature,
@@ -1107,16 +1119,19 @@ out:
 }
 
 gboolean
-fpi_sdcp_verify_reconnect (GBytes  *application_secret,
-                           GBytes  *random,
-                           GBytes  *mac,
-                           GError **error)
+fpi_sdcp_verify_reconnect (GBytes      *application_secret,
+                           const gchar *label,
+                           GBytes      *random,
+                           GBytes      *mac,
+                           GError     **error)
 {
   g_autoptr(GBytes) host_mac = NULL;
 
   fp_dbg ("SDCP Verify ReconnectResponse");
 
-  host_mac = fpi_sdcp_mac (application_secret, "reconnect", random, NULL, error);
+  host_mac = fpi_sdcp_mac (application_secret,
+                           label ? label : SDCP_DEFAULT_LABEL_RECONNECT,
+                           random, NULL, error);
   if (*error)
     return FALSE;
 
@@ -1144,17 +1159,20 @@ fpi_sdcp_verify_reconnect (GBytes  *application_secret,
 }
 
 gboolean
-fpi_sdcp_verify_identify (GBytes  *application_secret,
-                          GBytes  *nonce,
-                          GBytes  *id,
-                          GBytes  *mac,
-                          GError **error)
+fpi_sdcp_verify_identify (GBytes      *application_secret,
+                          const gchar *label,
+                          GBytes      *nonce,
+                          GBytes      *id,
+                          GBytes      *mac,
+                          GError     **error)
 {
   g_autoptr(GBytes) host_mac = NULL;
 
   fp_dbg ("SDCP Verify AuthorizedIdentity");
 
-  host_mac = fpi_sdcp_mac (application_secret, "identify", nonce, id, error);
+  host_mac = fpi_sdcp_mac (application_secret,
+                           label ? label : SDCP_DEFAULT_LABEL_IDENTIFY,
+                           nonce, id, error);
   if (*error)
     return FALSE;
 
@@ -1182,13 +1200,16 @@ fpi_sdcp_verify_identify (GBytes  *application_secret,
 }
 
 GBytes *
-fpi_sdcp_generate_enrollment_id (GBytes  *application_secret,
-                                 GBytes  *nonce,
-                                 GError **error)
+fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
+                                 const gchar *label,
+                                 GBytes      *nonce,
+                                 GError     **error)
 {
   g_autoptr(GBytes) id = NULL;
 
-  id = fpi_sdcp_mac (application_secret, "enroll", nonce, NULL, error);
+  id = fpi_sdcp_mac (application_secret,
+                     label ? label : SDCP_DEFAULT_LABEL_ENROLL,
+                     nonce, NULL, error);
   if (*error)
     return NULL;
 

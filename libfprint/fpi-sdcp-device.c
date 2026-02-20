@@ -53,6 +53,14 @@ fpi_sdcp_claim_new (void)
 
   res = g_new0 (FpiSdcpClaim, 1);
 
+  res->master_secret_label    = SDCP_DEFAULT_LABEL_MASTER_SECRET;
+  res->application_keys_label = SDCP_DEFAULT_LABEL_APPLICATION_KEYS;
+  res->connect_label          = SDCP_DEFAULT_LABEL_CONNECT;
+  res->reconnect_label        = SDCP_DEFAULT_LABEL_RECONNECT;
+  res->enroll_label           = SDCP_DEFAULT_LABEL_ENROLL;
+  res->identify_label         = SDCP_DEFAULT_LABEL_IDENTIFY;
+  res->sample_label           = SDCP_DEFAULT_LABEL_SAMPLE;
+
   return res;
 }
 
@@ -91,6 +99,14 @@ fpi_sdcp_claim_copy (FpiSdcpClaim *other)
   FpiSdcpClaim *res = NULL;
 
   res = fpi_sdcp_claim_new ();
+
+  res->master_secret_label    = other->master_secret_label;
+  res->application_keys_label = other->application_keys_label;
+  res->connect_label          = other->connect_label;
+  res->reconnect_label        = other->reconnect_label;
+  res->enroll_label           = other->enroll_label;
+  res->identify_label         = other->identify_label;
+  res->sample_label           = other->sample_label;
 
   if (other->model_certificate)
     res->model_certificate = g_bytes_ref (other->model_certificate);
@@ -548,6 +564,17 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
 
   fpi_sdcp_device_set_application_secret (self, application_secret);
 
+  /* Store per-session labels from the claim for post-connect operations */
+  priv->reconnect_label = claim->reconnect_label ?
+                          claim->reconnect_label :
+                          SDCP_DEFAULT_LABEL_RECONNECT;
+  priv->identify_label  = claim->identify_label ?
+                          claim->identify_label :
+                          SDCP_DEFAULT_LABEL_IDENTIFY;
+  priv->enroll_label    = claim->enroll_label ?
+                          claim->enroll_label :
+                          SDCP_DEFAULT_LABEL_ENROLL;
+
   /* Clear no longer needed private data */
   g_clear_pointer (&priv->host_private_key, g_bytes_unref);
   g_clear_pointer (&priv->host_public_key, g_bytes_unref);
@@ -594,7 +621,10 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
     {
       fpi_sdcp_device_get_application_secret (self, &application_secret);
 
-      if (fpi_sdcp_verify_reconnect (application_secret, priv->reconnect_random, mac, &error))
+      if (fpi_sdcp_verify_reconnect (application_secret,
+                                     priv->reconnect_label,
+                                     priv->reconnect_random,
+                                     mac, &error))
         {
           fp_dbg ("SDCP Reconnect succeeded");
           fpi_device_open_complete (FP_DEVICE (self), NULL);
@@ -695,6 +725,7 @@ fpi_sdcp_device_enroll_commit (FpSdcpDevice *self,
                                GError       *error)
 {
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
   g_autoptr(GBytes) application_secret = NULL;
   GBytes *id = NULL;
@@ -707,7 +738,7 @@ fpi_sdcp_device_enroll_commit (FpSdcpDevice *self,
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
   fpi_sdcp_device_get_application_secret (self, &application_secret);
 
-  id = fpi_sdcp_generate_enrollment_id (application_secret, nonce, &error);
+  id = fpi_sdcp_generate_enrollment_id (application_secret, priv->enroll_label, nonce, &error);
   if (!id || error)
     {
       fp_warn ("Could not generate SDCP enrollment ID");
@@ -851,7 +882,10 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
 
   fpi_sdcp_device_get_application_secret (self, &application_secret);
 
-  if (!fpi_sdcp_verify_identify (application_secret, priv->identify_nonce, id, mac, &error))
+  if (!fpi_sdcp_verify_identify (application_secret,
+                                 priv->identify_label,
+                                 priv->identify_nonce,
+                                 id, mac, &error))
     {
       g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
       fpi_device_action_error (FP_DEVICE (self), error);

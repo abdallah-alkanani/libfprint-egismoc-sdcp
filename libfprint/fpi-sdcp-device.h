@@ -24,18 +24,27 @@
 
 #include "fp-sdcp-device.h"
 
-#define SDCP_RANDOM_SIZE           32
+#define SDCP_RANDOM_SIZE 32
 #define SDCP_APPLICATION_SECRET_SIZE 32
 #define SDCP_ENROLLMENT_ID_SIZE 32
 #define SDCP_NONCE_SIZE 32
 #define SDCP_MAC_SIZE 32
-#define SDCP_DIGEST_SIZE           32 /* SHA256 */
-#define SDCP_CURVE_FIELD_SIZE      32 /* P256 */
-#define SDCP_PUBLIC_KEY_SIZE       65 /* 0x04||x||y */
-#define SDCP_PRIVATE_KEY_SIZE      32 /* log_2(n)/8 */
-#define SDCP_SIGNATURE_SIZE        64 /* r||s */
+#define SDCP_DIGEST_SIZE 32           /* SHA256 */
+#define SDCP_CURVE_FIELD_SIZE 32      /* P256 */
+#define SDCP_PUBLIC_KEY_SIZE 65       /* 0x04||x||y */
+#define SDCP_PRIVATE_KEY_SIZE 32      /* log_2(n)/8 */
+#define SDCP_SIGNATURE_SIZE 64        /* r||s */
 #define SDCP_ENCRYPTION_BLOCK_SIZE 16 /* AES */
-#define SDCP_ENCRYPTION_KEY_SIZE   32 /* AES256 */
+#define SDCP_ENCRYPTION_KEY_SIZE 32   /* AES256 */
+
+
+#define SDCP_DEFAULT_LABEL_MASTER_SECRET "master secret"
+#define SDCP_DEFAULT_LABEL_APPLICATION_KEYS "application keys"
+#define SDCP_DEFAULT_LABEL_CONNECT "connect"
+#define SDCP_DEFAULT_LABEL_RECONNECT "reconnect"
+#define SDCP_DEFAULT_LABEL_SAMPLE "sample"
+#define SDCP_DEFAULT_LABEL_ENROLL "enroll"
+#define SDCP_DEFAULT_LABEL_IDENTIFY "identify"
 
 /**
  * FpiDeviceSdcpVerificationFlags:
@@ -70,6 +79,20 @@ typedef enum {
 
 /**
  * FpiSdcpClaim:
+ * @master_secret_label: HMAC label for master secret derivation, or %NULL to
+ *   use %SDCP_DEFAULT_LABEL_MASTER_SECRET
+ * @application_keys_label: HMAC label for application keys derivation, or %NULL
+ *   to use %SDCP_DEFAULT_LABEL_APPLICATION_KEYS
+ * @connect_label: HMAC label for connect operations, or %NULL to use
+ *   %SDCP_DEFAULT_LABEL_CONNECT
+ * @reconnect_label: HMAC label for reconnect operations, or %NULL to use
+ *   %SDCP_DEFAULT_LABEL_RECONNECT
+ * @enroll_label: HMAC label for enroll operations, or %NULL to use
+ *   %SDCP_DEFAULT_LABEL_ENROLL
+ * @identify_label: HMAC label for identify operations, or %NULL to use
+ *   %SDCP_DEFAULT_LABEL_IDENTIFY
+ * @sample_label: HMAC label for sample operations, or %NULL to use
+ *   %SDCP_DEFAULT_LABEL_SAMPLE
  * @model_certificate: Microsoft-issued per-model certificate encoded in x509
  *   ASN.1 DER format (`cert_m`)
  * @device_public_key: The per-device ECDSA public key (`pk_d`)
@@ -97,12 +120,12 @@ typedef struct _FpiSdcpClaim
   const char *identify_label;
   const char *sample_label;
 
-  GBytes *model_certificate;    /* cert_m */
-  GBytes *device_public_key;    /* pk_d   */
-  GBytes *firmware_public_key;  /* pk_f   */
-  GBytes *firmware_hash;        /* h_f    */
-  GBytes *model_signature;      /* s_m    */
-  GBytes *device_signature;     /* s_d    */
+  GBytes     *model_certificate;   /* cert_m */
+  GBytes     *device_public_key;   /* pk_d   */
+  GBytes     *firmware_public_key; /* pk_f   */
+  GBytes     *firmware_hash;       /* h_f    */
+  GBytes     *model_signature;     /* s_m    */
+  GBytes     *device_signature;    /* s_d    */
 } FpiSdcpClaim;
 
 GType          fpi_sdcp_claim_get_type (void) G_GNUC_CONST;
