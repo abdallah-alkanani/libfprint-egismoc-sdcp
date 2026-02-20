@@ -77,12 +77,9 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
                            GError     **error)
 {
   EVP_MD_CTX *mdctx = NULL;
-  EVP_PKEY_CTX *pctx = NULL;
   int verify_result;
 
   mdctx = EVP_MD_CTX_create ();
-  pctx = EVP_PKEY_CTX_new (pkey, NULL);
-  EVP_MD_CTX_set_pkey_ctx (mdctx, pctx);
 
   if (!EVP_DigestVerifyInit (mdctx, NULL, EVP_sha256 (), NULL, pkey))
     goto out_error;
@@ -121,7 +118,6 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
   if (verify_result != 1)
     goto out_error;
 
-  EVP_PKEY_CTX_free (pctx);
   EVP_MD_CTX_free (mdctx);
 
   return TRUE;
@@ -132,7 +128,6 @@ out_error:
                                                "OpenSSL error verifying signature for label '%s'",
                                                label));
   print_openssl_errors ();
-  g_clear_pointer (&pctx, EVP_PKEY_CTX_free);
   g_clear_pointer (&mdctx, EVP_MD_CTX_free);
   return FALSE;
 }
