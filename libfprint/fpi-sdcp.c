@@ -257,7 +257,8 @@ fpi_sdcp_verify_certificate (X509    *certificate,
   if (!X509_STORE_set1_param (sdcp_truststore, param))
     goto out_error;
 
-  X509_VERIFY_PARAM_free (param);
+  g_clear_pointer (&param, X509_VERIFY_PARAM_free);
+
   ctx = X509_STORE_CTX_new ();
 
   if(!X509_STORE_CTX_init (ctx, sdcp_truststore, certificate, NULL))
