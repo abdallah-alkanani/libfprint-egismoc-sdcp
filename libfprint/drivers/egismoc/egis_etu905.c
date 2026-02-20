@@ -895,6 +895,7 @@ egis_etu905_enroll_begin_cb (FpDevice *device,
 {
   fp_dbg ("Enroll begin callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
+  FpiByteReader reader;
 
   if (error)
     {
@@ -902,17 +903,12 @@ egis_etu905_enroll_begin_cb (FpDevice *device,
       return;
     }
 
-  FpiByteReader reader;
-  gboolean read = TRUE;
 
   fpi_byte_reader_init (&reader, buffer_in, length_in);
 
-  read &= fpi_byte_reader_set_pos (&reader, EGIS_ETU905_LIST_RESPONSE_PREFIX_SIZE);
-
+  fpi_byte_reader_set_pos (&reader, EGIS_ETU905_LIST_RESPONSE_PREFIX_SIZE);
   const guint8 *data = NULL;
-
-  read &= fpi_byte_reader_get_data (&reader, EGIS_ETU905_FINGERPRINT_DATA_SIZE,
-                                    &data);
+  fpi_byte_reader_get_data (&reader, EGIS_ETU905_FINGERPRINT_DATA_SIZE, &data);
 
   memcpy (self->sid, data, EGIS_ETU905_FINGERPRINT_DATA_SIZE);
 
