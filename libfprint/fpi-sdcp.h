@@ -31,9 +31,9 @@
  *
  * Function to generate a new ephemeral ECDH key pair for use with SDCP.
  **/
-void fpi_sdcp_generate_host_key (GBytes **private_key,
-                                 GBytes **public_key,
-                                 GError **error);
+gboolean fpi_sdcp_generate_host_key (GBytes **private_key,
+                                     GBytes **public_key,
+                                     GError **error);
 
 /**
  * fpi_sdcp_generate_random:
@@ -105,9 +105,9 @@ gboolean fpi_sdcp_verify_reconnect (GBytes  *application_secret,
  * @mac: The MAC provided in the device's AuthorizedIdentity (m)
  * @error: (out): #GError in case the return value is %FALSE
  *
- * Verifies the SDCP ReconnectResponse.
+ * Verifies the SDCP AuthorizedIdentity.
  *
- * Returns: %TRUE if the ReconnectResponse is verified successfully
+ * Returns: %TRUE if the AuthorizedIdentity is verified successfully
  **/
 gboolean fpi_sdcp_verify_identify (GBytes  *application_secret,
                                    GBytes  *nonce,

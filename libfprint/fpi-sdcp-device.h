@@ -24,13 +24,18 @@
 
 #include "fp-sdcp-device.h"
 
-#define SDCP_PUBLIC_KEY_SIZE 65
+#define SDCP_RANDOM_SIZE           32
 #define SDCP_APPLICATION_SECRET_SIZE 32
-#define SDCP_RANDOM_SIZE 32
-#define SDCP_MAC_SIZE 32
-#define SDCP_NONCE_SIZE 32
 #define SDCP_ENROLLMENT_ID_SIZE 32
-#define SDCP_SIGNATURE_SIZE 64
+#define SDCP_NONCE_SIZE 32
+#define SDCP_MAC_SIZE 32
+#define SDCP_DIGEST_SIZE           32 /* SHA256 */
+#define SDCP_CURVE_FIELD_SIZE      32 /* P256 */
+#define SDCP_PUBLIC_KEY_SIZE       65 /* 0x04||x||y */
+#define SDCP_PRIVATE_KEY_SIZE      32 /* log_2(n)/8 */
+#define SDCP_SIGNATURE_SIZE        64 /* r||s */
+#define SDCP_ENCRYPTION_BLOCK_SIZE 16 /* AES */
+#define SDCP_ENCRYPTION_KEY_SIZE   32 /* AES256 */
 
 /**
  * FpiSdcpClaim:
@@ -50,19 +55,27 @@
  * Note all of these may simply be memory views into a larger #GBytes created
  * using g_bytes_new_from_bytes().
  */
-struct _FpiSdcpClaim
+typedef struct _FpiSdcpClaim
 {
   /*< public >*/
+  const char *master_secret_label;
+  const char *application_keys_label;
+  const char *connect_label;
+  const char *reconnect_label;
+  const char *enroll_label;
+  const char *identify_label;
+  const char *sample_label;
+
   GBytes *model_certificate;    /* cert_m */
   GBytes *device_public_key;    /* pk_d   */
   GBytes *firmware_public_key;  /* pk_f   */
   GBytes *firmware_hash;        /* h_f    */
   GBytes *model_signature;      /* s_m    */
   GBytes *device_signature;     /* s_d    */
-};
-typedef struct _FpiSdcpClaim FpiSdcpClaim;
+} FpiSdcpClaim;
 
 GType          fpi_sdcp_claim_get_type (void) G_GNUC_CONST;
+
 FpiSdcpClaim  *fpi_sdcp_claim_new (void);
 FpiSdcpClaim  *fpi_sdcp_claim_copy (FpiSdcpClaim *other);
 void           fpi_sdcp_claim_free (FpiSdcpClaim *claim);
@@ -113,8 +126,6 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC (FpiSdcpClaim, fpi_sdcp_claim_free)
  * - #FpDeviceClass.cancel
  * - #FpDeviceClass.suspend
  * - #FpDeviceClass.resume
- *
- * XXX: Is the use of fpi_device_action_error() acceptable?
  *
  * Drivers *must* also handle cancellation properly for any long running
  * operation (i.e. any operation that requires capturing). It is entirely fine

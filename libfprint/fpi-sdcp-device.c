@@ -196,9 +196,10 @@ fpi_sdcp_device_connect (FpSdcpDevice *self)
 
   if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
     {
-      /* SDCP Connect: 3.i. Generate host ephemeral ECDH key pair */
-      fpi_sdcp_generate_host_key (&priv->host_private_key, &priv->host_public_key, &error);
-      if (error)
+      /* SDCP Connect: 3.i. Generate host ephemeral ECDH key pair */;
+      if (!fpi_sdcp_generate_host_key (&priv->host_private_key,
+                                       &priv->host_public_key,
+                                       &error))
         {
           fpi_sdcp_device_connect_complete (self,
                                             NULL, NULL, NULL,
@@ -208,7 +209,7 @@ fpi_sdcp_device_connect (FpSdcpDevice *self)
 
       /* SDCP Connect: 3.ii. Generate host random */
       priv->host_random = fpi_sdcp_generate_random (&error);
-      if (error)
+      if (!priv->host_random)
         {
           fpi_sdcp_device_connect_complete (self,
                                             NULL, NULL, NULL,

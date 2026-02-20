@@ -36,10 +36,11 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 
-#define SDCP_PRIVATE_KEY_SIZE 32
 #define SDCP_KEY_AGREEMENT_SIZE 32
 #define SDCP_MASTER_SECRET_SIZE 32
 #define SDCP_APPLICATION_KEYS_SIZE 64
+
+#define SDCP_DEVICE_SIGNATURE_HEADER "\xC0\x01"
 
 /******************************************************************************/
 
@@ -806,33 +807,29 @@ out:
 
 /******************************************************************************/
 
-void
+gboolean
 fpi_sdcp_generate_host_key (GBytes **private_key,
                             GBytes **public_key,
                             GError **error)
 {
   EVP_PKEY *key = EVP_EC_gen ("P-256");
 
-  if (*private_key)
-    g_bytes_unref (*private_key);
   *private_key = fpi_sdcp_get_private_key (key, error);
   if (*error)
     goto out;
 
-  if (*public_key)
-    g_bytes_unref (*public_key);
   *public_key = fpi_sdcp_get_public_key (key, error);
   if (*error)
     goto out;
 
   EVP_PKEY_free (key);
 
-  return;
+  return TRUE;
 
 out:
   print_openssl_errors ();
   g_clear_pointer (&key, EVP_PKEY_free);
-  return;
+  return FALSE;
 }
 
 GBytes *
