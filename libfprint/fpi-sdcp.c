@@ -23,8 +23,11 @@
 #include "fpi-sdcp.h"
 #include "sdcp/fpi-sdcp-truststore-resource.h"
 
+#include <openssl/bn.h>
 #include <openssl/core_names.h>
+#include <openssl/crypto.h>
 #include <openssl/ecdh.h>
+#include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/kdf.h>
@@ -68,6 +71,53 @@ print_certificate (X509 *certificate)
 
 /******************************************************************************/
 
+static inline void
+fpi_openssl_free_wrapper (void *ptr)
+{
+  /* This is a macro, so we cannot use it as callback. */
+  OPENSSL_free (ptr);
+}
+
+/* Convert a raw 64-byte IEEE P1363 ECDSA signature (r||s) to DER, which is
+ * what OpenSSL's EVP_DigestVerifyFinal() requires for EC keys. */
+static GBytes *
+raw_ecdsa_sig_to_der (GBytes *raw_sig)
+{
+  const guint8 *data = g_bytes_get_data (raw_sig, NULL);
+  gsize len = g_bytes_get_size (raw_sig);
+  ECDSA_SIG *sig = NULL;
+  BIGNUM *r = NULL, *s = NULL;
+  guint8 *der = NULL;
+  int der_len;
+
+  if (len != 64)
+    return NULL;
+
+  sig = ECDSA_SIG_new ();
+  if (!sig)
+    return NULL;
+
+  r = BN_bin2bn (data,      32, NULL);
+  s = BN_bin2bn (data + 32, 32, NULL);
+
+  /* ECDSA_SIG_set0 takes ownership of r and s on success */
+  if (!r || !s || !ECDSA_SIG_set0 (sig, r, s))
+    {
+      BN_free (r);
+      BN_free (s);
+      ECDSA_SIG_free (sig);
+      return NULL;
+    }
+
+  der_len = i2d_ECDSA_SIG (sig, &der);
+  ECDSA_SIG_free (sig);
+
+  if (der_len <= 0)
+    return NULL;
+
+  return g_bytes_new_with_free_func (der, der_len, fpi_openssl_free_wrapper, der);
+}
+
 static gboolean
 fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
                            const gchar *label,
@@ -76,11 +126,18 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
                            GBytes      *signature,
                            GError     **error)
 {
+  g_autoptr(GBytes) der_sig = NULL;
   EVP_MD_CTX *mdctx = NULL;
   int verify_result;
 
+  /* SDCP signatures are raw 64-byte (r||s); convert to DER for OpenSSL */
+  der_sig = raw_ecdsa_sig_to_der (signature);
+  if (!der_sig)
+    goto out_error;
+
   mdctx = EVP_MD_CTX_create ();
 
+  /* Let EVP_DigestVerifyInit create and own the pctx internally */
   if (!EVP_DigestVerifyInit (mdctx, NULL, EVP_sha256 (), NULL, pkey))
     goto out_error;
 
