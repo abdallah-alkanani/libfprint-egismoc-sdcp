@@ -46,18 +46,24 @@ valid=true
 
 for f in ${lib1_exported[*]}; do
     if in_array "$f" ${lib2_exported[*]}; then
-        echo "$f function exported in both $library1 and $library2"
+        echo -n "$f function exported in both $library1 and $library2"
         if is_fatal "$f"; then
+            echo " (fatal)"
             valid=false
+        else
+            echo
         fi
     fi
 done
 
 for f in ${lib1_defined[*]}; do
     if in_array "$f" ${lib2_defined[*]}; then
-        echo "$f function defined in both $library1 and $library2"
+        echo -n "$f function defined in both $library1 and $library2"
         if is_fatal "$f"; then
+            echo " (fatal)"
             valid=false
+        else
+            echo
         fi
     fi
 done
