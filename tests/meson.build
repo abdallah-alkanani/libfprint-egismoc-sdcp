@@ -465,6 +465,7 @@ if get_option('tod')
             'tod-drivers/base-fpi-device.h',
             'tod-drivers/base-fpi-image.h',
             'tod-drivers/base-fpi-image-device.h',
+            'tod-drivers/base-fpi-sdcp-device.h',
             'tod-drivers/base-fpi-spi.h',
             'tod-drivers/base-fpi-usb.h',
         ],
@@ -507,6 +508,7 @@ if get_option('tod')
             'v1+1.94.1',
             'v1+1.94.3',
             'v1+1.94.7',
+            'v1+1.95.0',
         ]
 
         foreach tod_version: tod_test_versions

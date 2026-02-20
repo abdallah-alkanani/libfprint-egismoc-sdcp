@@ -40,6 +40,10 @@ foreach source: libfprint_private_sources
     tod_sources += '..' / source
 endforeach
 
+if 'sdcp' in driver_helpers
+    tod_sources += sdcp_truststore_resource_c
+endif
+
 tod_symbols = files('tod-symbols.h')[0]
 if meson.version().version_compare('>=1.4')
     tod_symbols = tod_symbols.full_path()

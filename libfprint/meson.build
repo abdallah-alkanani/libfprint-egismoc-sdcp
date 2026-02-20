@@ -194,7 +194,6 @@ if 'sdcp' in driver_helpers
     libfprint_private_sources += [
         'fpi-sdcp.c',
         'fpi-sdcp-device.c',
-        sdcp_truststore_resource_c,
     ]
     libfprint_public_headers += [
         'fp-sdcp-device.h',
@@ -203,6 +202,12 @@ if 'sdcp' in driver_helpers
         'fpi-sdcp.h',
         'fpi-sdcp-device.h',
     ]
+
+    if not get_option('tod')
+        libfprint_private_sources += [
+            sdcp_truststore_resource_c,
+        ]
+    endif
 endif
 
 fp_enums = gnome.mkenums_simple('fp-enums',

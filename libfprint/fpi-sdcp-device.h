@@ -21,8 +21,8 @@
 #pragma once
 
 #include "fpi-device.h"
-
 #include "fp-sdcp-device.h"
+#include "tod/tod-macros.h"
 
 #define SDCP_RANDOM_SIZE 32
 #define SDCP_APPLICATION_SECRET_SIZE 32
@@ -126,6 +126,10 @@ typedef struct _FpiSdcpClaim
   GBytes     *firmware_hash;       /* h_f    */
   GBytes     *model_signature;     /* s_m    */
   GBytes     *device_signature;    /* s_d    */
+
+  /*< private >*/
+  /* padding for future expansion */
+  TOD_PADDING_ALIGNED (16, 0);
 } FpiSdcpClaim;
 
 GType          fpi_sdcp_claim_get_type (void) G_GNUC_CONST;
@@ -200,6 +204,10 @@ struct _FpSdcpDeviceClass
   void                           (*enroll_commit) (FpSdcpDevice *sdcp_device,
                                                    GBytes       *id);
   void                           (*identify)      (FpSdcpDevice *sdcp_device);
+
+  /*< private >*/
+  /* padding for future expansion */
+  TOD_PADDING_ALIGNED (32, 0);
 };
 
 void fpi_sdcp_device_open_complete (FpSdcpDevice *self,
