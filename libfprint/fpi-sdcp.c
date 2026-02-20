@@ -1011,6 +1011,9 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
           fp_dbg ("firmware_public_key:");
           fp_dbg_hex_dump_gbytes (claim->firmware_public_key);
 
+          fp_dbg ("device_signature:");
+          fp_dbg_hex_dump_gbytes (claim->device_signature);
+
           device_public_pkey = fpi_sdcp_get_public_pkey (claim->device_public_key, error);
           if (*error)
             goto out_error;
@@ -1019,7 +1022,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
                                           "\xC0\x01",
                                           claim->firmware_hash,
                                           claim->firmware_public_key,
-                                          claim->model_signature,
+                                          claim->device_signature,
                                           &local_error))
             {
               g_propagate_prefixed_error (error, g_steal_pointer (&local_error),
