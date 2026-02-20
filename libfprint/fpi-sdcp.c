@@ -331,8 +331,9 @@ out:
 }
 
 static gboolean
-fpi_sdcp_verify_certificate (X509    *certificate,
-                             GError **error)
+fpi_sdcp_verify_certificate (X509                          *certificate,
+                             FpiDeviceSdcpVerificationFlags verification_flags,
+                             GError                       **error)
 {
   X509_STORE *sdcp_truststore = NULL;
   X509_VERIFY_PARAM *param = NULL;
@@ -346,22 +347,29 @@ fpi_sdcp_verify_certificate (X509    *certificate,
   if (!param)
     goto out_error;
 
-  /*
-   * Most model certificates expire after one year and are not renewed via a
-   * vendor firmware update, so we should ignore the validity time check.
-   */
-  if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_NO_CHECK_TIME))
-    goto out_error;
+  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME)
+    {
+      /*
+       * Most model certificates expire after one year and are not renewed via a
+       * vendor firmware update, so we should ignore the validity time check.
+       */
+      if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_NO_CHECK_TIME))
+        goto out_error;
+    }
 
-  /* Do not allow broken certificates */
-  if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_X509_STRICT))
-    goto out_error;
+  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT)
+    {
+      /* Do not allow broken certificates */
+      if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_X509_STRICT))
+        goto out_error;
+    }
 
-  /* set X509_V_FLAG_PARTIAL_CHAIN if we want to skip adding all root and intermediate certs */
-  /*
-     if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_PARTIAL_CHAIN))
-     goto out_error;
-   */
+  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN)
+    {
+      /* Skip verification of the full certificate chain. */
+      if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_PARTIAL_CHAIN))
+        goto out_error;
+    }
 
   if (!X509_STORE_set1_param (sdcp_truststore, param))
     goto out_error;
@@ -882,15 +890,14 @@ fpi_sdcp_generate_random (GError **error)
 }
 
 gboolean
-fpi_sdcp_verify_connect (GBytes       *host_private_key,
-                         GBytes       *host_random,
-                         GBytes       *device_random,
-                         FpiSdcpClaim *claim,
-                         GBytes       *mac,
-                         gboolean      validate_certificate,
-                         gboolean      verify_signatures,
-                         GBytes      **application_secret,
-                         GError      **error)
+fpi_sdcp_verify_connect (GBytes                        *host_private_key,
+                         GBytes                        *host_random,
+                         GBytes                        *device_random,
+                         FpiSdcpClaim                  *claim,
+                         GBytes                        *mac,
+                         FpiDeviceSdcpVerificationFlags verification_flags,
+                         GBytes                       **application_secret,
+                         GError                       **error)
 {
   g_autoptr(GBytes) claim_hash = NULL;
   g_autoptr(GBytes) claim_mac = NULL;
@@ -984,7 +991,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
   /* SDCP Connect: 5.v. Unpack the claim (SKIP; already done) */
   /* SDCP Connect: 5.vi. Verify the claim */
 
-  if (validate_certificate)
+  if (!(verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES))
     {
       /* Validate the certificate */
 
@@ -1000,7 +1007,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
 
       print_certificate (cert);
 
-      if (!fpi_sdcp_verify_certificate (cert, error))
+      if (!fpi_sdcp_verify_certificate (cert, verification_flags, error))
         {
           fp_dbg ("SDCP model certificate verification failed");
           goto out;
@@ -1008,7 +1015,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
 
       fp_dbg ("SDCP model certificate verified successfully");
 
-      if (verify_signatures)
+      if (!(verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES))
         {
           g_autoptr(GError) local_error = NULL;
           /* Get the certificate's public key */

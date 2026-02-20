@@ -135,8 +135,7 @@ test_verify_connect (void)
                                           device_random,
                                           claim,
                                           connect_mac,
-                                          TRUE,
-                                          TRUE,
+                                          FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
                                           &application_secret,
                                           &error));
 

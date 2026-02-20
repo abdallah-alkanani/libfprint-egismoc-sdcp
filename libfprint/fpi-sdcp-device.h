@@ -38,6 +38,37 @@
 #define SDCP_ENCRYPTION_KEY_SIZE   32 /* AES256 */
 
 /**
+ * FpiDeviceSdcpVerificationFlags:
+ * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES: Skip validating the
+ *   device's #FpiSdcpClaim.model_certificate against the SDCP truststore.
+ *   SDCP truststore.
+ *   It determines if the model certificate (cert_m) should be parsed and
+ *   its trust chain validated as issued from Microsoft's well-known issuers
+ * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES: Skip validating the
+ *   #FpiSdcpClaim.model_signature and #FpiSdcpClaim.device_signature.
+ *   It determines if the model signature (s_m) and device signature (s_d)
+ *   should be validated against the certificate and keys provided in the claim.
+ *
+ * @FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME: Skip validating the
+ *   certificate's validity period.
+ * @FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT: Use a less strict
+ *   validation approach for the certificate, allowing certain non-critical
+ *   issues to be ignored.
+ * @FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN: Allow
+ *   validation of the certificate even if the trust chain is incomplete.
+ *
+ * Bitfield of SDCP verification flags for a device.
+ */
+typedef enum {
+  FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES = 1 << 0,
+  FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES = 1 << 1,
+
+  FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME = 1 << 8,
+  FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT = 1 << 9,
+  FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN = 1 << 10,
+} FpiDeviceSdcpVerificationFlags;
+
+/**
  * FpiSdcpClaim:
  * @model_certificate: Microsoft-issued per-model certificate encoded in x509
  *   ASN.1 DER format (`cert_m`)
@@ -85,10 +116,8 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC (FpiSdcpClaim, fpi_sdcp_claim_free)
 
 /**
  * FpSdcpDeviceClass:
- * @ignore_device_certificate: Set to %TRUE to skip validating the device's
- *   #FpiSdcpClaim.model_certificate against the SDCP truststore.
- * @ignore_device_signatures: Set to %TRUE to skip verifying the device's
- *   #FpiSdcpClaim.model_signature and #FpiSdcpClaim.device_signature.
+ * @verification_flags: Bitfield of #FpiDeviceSdcpVerificationFlags to control
+ *   verification behavior.
  * @open: Open the device. Similar to #FpDeviceClass.open except that
  *   completion with fpi_sdcp_device_open_complete() will also take care of
  *   executing @connect and @reconnect as necessary.
@@ -136,19 +165,18 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC (FpiSdcpClaim, fpi_sdcp_claim_free)
  */
 struct _FpSdcpDeviceClass
 {
-  FpDeviceClass parent_class;
+  FpDeviceClass                  parent_class;
 
-  gboolean      ignore_device_certificate;
-  gboolean      ignore_device_signatures;
+  FpiDeviceSdcpVerificationFlags verification_flags;
 
-  void          (*open)          (FpSdcpDevice *sdcp_device);
-  void          (*connect)       (FpSdcpDevice *sdcp_device);
-  void          (*reconnect)     (FpSdcpDevice *sdcp_device);
-  void          (*list)          (FpSdcpDevice *sdcp_device);
-  void          (*enroll)        (FpSdcpDevice *sdcp_device);
-  void          (*enroll_commit) (FpSdcpDevice *sdcp_device,
-                                  GBytes       *id);
-  void          (*identify)      (FpSdcpDevice *sdcp_device);
+  void                           (*open)          (FpSdcpDevice *sdcp_device);
+  void                           (*connect)       (FpSdcpDevice *sdcp_device);
+  void                           (*reconnect)     (FpSdcpDevice *sdcp_device);
+  void                           (*list)          (FpSdcpDevice *sdcp_device);
+  void                           (*enroll)        (FpSdcpDevice *sdcp_device);
+  void                           (*enroll_commit) (FpSdcpDevice *sdcp_device,
+                                                   GBytes       *id);
+  void                           (*identify)      (FpSdcpDevice *sdcp_device);
 };
 
 void fpi_sdcp_device_open_complete (FpSdcpDevice *self,

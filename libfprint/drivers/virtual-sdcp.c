@@ -310,8 +310,8 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
   dev_class->nr_enroll_stages = 1;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
 
-  sdcp_dev_class->ignore_device_certificate = FALSE;
-  sdcp_dev_class->ignore_device_signatures = FALSE;
+  sdcp_dev_class->verification_flags =
+    FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME;
 
   sdcp_dev_class->open = dev_open;
   sdcp_dev_class->connect = dev_connect;

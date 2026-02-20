@@ -534,8 +534,7 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
                                 device_random,
                                 claim,
                                 mac,
-                                !cls->ignore_device_certificate,
-                                !cls->ignore_device_signatures,
+                                cls->verification_flags,
                                 &application_secret,
                                 &error))
     {

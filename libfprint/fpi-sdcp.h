@@ -50,10 +50,9 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  * @device_random: The random provided in the device's ConnectResponse (r_d)
  * @claim: #FpiSdcpClaim provided in the device's ConnectResponse (c)
  * @mac: The MAC provided in the device's ConnectResponse (m)
- * @validate_certificate: If the model certificate (cert_m) should be parsed and
- *   its trust chain validated as issued from Microsoft's well-known issuers
- * @verify_signatures: If the model signature (s_m) and device signature (s_d)
- *   should be validated against the certificate and keys provided in the claim
+ * @verification_flags: Flags to control which verifications should be performed
+ *   during the ConnectResponse validation.
+ *   See #FpiDeviceSdcpVerificationFlags for details.
  * @application_secret: (out) (transfer full): A new #GBytes with the derived
  *   application secret (s) of length %SDCP_APPLICATION_SECRET_SIZE
  * @error: (out): #GError in case the return value is %NULL
@@ -71,15 +70,14 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  * Returns: %TRUE if the @application_secret was successfully derived and the
  * ConnectResponse has been successfully verified
  **/
-gboolean fpi_sdcp_verify_connect (GBytes       *host_private_key,
-                                  GBytes       *host_random,
-                                  GBytes       *device_random,
-                                  FpiSdcpClaim *claim,
-                                  GBytes       *mac,
-                                  gboolean      validate_certificate,
-                                  gboolean      verify_signatures,
-                                  GBytes      **application_secret,
-                                  GError      **error);
+gboolean fpi_sdcp_verify_connect (GBytes                        *host_private_key,
+                                  GBytes                        *host_random,
+                                  GBytes                        *device_random,
+                                  FpiSdcpClaim                  *claim,
+                                  GBytes                        *mac,
+                                  FpiDeviceSdcpVerificationFlags verification_flags,
+                                  GBytes                       **application_secret,
+                                  GError                       **error);
 
 /**
  * fpi_sdcp_verify_reconnect:
