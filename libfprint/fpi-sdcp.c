@@ -1094,7 +1094,10 @@ fpi_sdcp_verify_reconnect (GBytes  *application_secret,
   fp_dbg ("Host MAC:");
   fp_dbg_hex_dump_gbytes (host_mac);
 
-  if (g_bytes_equal (mac, host_mac))
+  if (g_bytes_get_size (mac) == g_bytes_get_size (host_mac) &&
+      CRYPTO_memcmp (g_bytes_get_data (mac, NULL),
+                     g_bytes_get_data (host_mac, NULL),
+                     g_bytes_get_size (mac)) == 0)
     {
       fp_dbg ("SDCP ReconnectResponse verified successfully");
       return TRUE;
@@ -1129,7 +1132,10 @@ fpi_sdcp_verify_identify (GBytes  *application_secret,
   fp_dbg ("Host MAC:");
   fp_dbg_hex_dump_gbytes (host_mac);
 
-  if (g_bytes_equal (mac, host_mac))
+  if (g_bytes_get_size (mac) == g_bytes_get_size (host_mac) &&
+      CRYPTO_memcmp (g_bytes_get_data (mac, NULL),
+                     g_bytes_get_data (host_mac, NULL),
+                     g_bytes_get_size (mac)) == 0)
     {
       fp_dbg ("SDCP AuthorizedIdentity verified successfully");
       return TRUE;
