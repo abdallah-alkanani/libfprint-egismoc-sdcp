@@ -78,6 +78,7 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
 {
   EVP_MD_CTX *mdctx = NULL;
   EVP_PKEY_CTX *pctx = NULL;
+  int verify_result;
 
   mdctx = EVP_MD_CTX_create ();
   pctx = EVP_PKEY_CTX_new (pkey, NULL);
@@ -106,9 +107,18 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
         goto out_error;
     }
 
-  if (!EVP_DigestVerifyUpdate (mdctx,
-                               g_bytes_get_data (signature, NULL),
-                               g_bytes_get_size (signature)))
+  verify_result = EVP_DigestVerifyFinal (mdctx,
+                                         g_bytes_get_data (der_sig, NULL),
+                                         g_bytes_get_size (der_sig));
+  if (verify_result == 0)
+    {
+      g_set_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED,
+                   "Signature verification failed for label '%s'", label);
+      g_clear_pointer (&mdctx, EVP_MD_CTX_free);
+      return FALSE;
+    }
+
+  if (verify_result != 1)
     goto out_error;
 
   EVP_PKEY_CTX_free (pctx);
