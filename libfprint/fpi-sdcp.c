@@ -70,6 +70,34 @@ print_certificate (X509 *certificate)
   BIO_free (bio);
 }
 
+typedef struct
+{
+  void *ptr;
+  gsize size;
+} FpiSdcpDestroyData;
+
+static void
+fpi_sdcp_secure_destroy_notify (gpointer destroy_data)
+{
+  FpiSdcpDestroyData *d = destroy_data;
+
+  OPENSSL_cleanse (d->ptr, d->size);
+  g_free (d->ptr);
+  g_free (d);
+}
+
+static GBytes *
+fpi_sdcp_bytes_new_secure_take (void *buf, gsize size)
+{
+  FpiSdcpDestroyData *d;
+
+  d = g_new0 (FpiSdcpDestroyData, 1);
+  d->ptr = buf;
+  d->size = size;
+
+  return g_bytes_new_with_free_func (buf, size, fpi_sdcp_secure_destroy_notify, d);
+}
+
 /******************************************************************************/
 
 static inline void
@@ -431,7 +459,7 @@ fpi_sdcp_kdf (GBytes      *key,
   EVP_KDF_CTX_free (kdf_ctx);
   EVP_KDF_free (kdf);
 
-  res = g_bytes_new_take (secret, length);
+  res = fpi_sdcp_bytes_new_secure_take (secret, length);
 
   return g_steal_pointer (&res);
 }
@@ -486,7 +514,7 @@ fpi_sdcp_mac (GBytes      *application_secret,
   EVP_MAC_CTX_free (hmac_ctx);
   EVP_MAC_free (hmac);
 
-  res = g_bytes_new_take (mac, mac_len);
+  res = fpi_sdcp_bytes_new_secure_take (mac, mac_len);
   return g_steal_pointer (&res);
 
 out_error:
@@ -524,7 +552,7 @@ fpi_sdcp_get_private_key (EVP_PKEY *pkey,
 
   BN_clear_free (priv_bn);
 
-  res = g_bytes_new_take (priv, priv_len);
+  res = fpi_sdcp_bytes_new_secure_take (priv, priv_len);
 
   return g_steal_pointer (&res);
 
@@ -555,7 +583,7 @@ fpi_sdcp_get_public_key (EVP_PKEY *pkey,
   if (pub_len != SDCP_PUBLIC_KEY_SIZE)
     goto out_error;
 
-  res = g_bytes_new_take (pub, pub_len);
+  res = fpi_sdcp_bytes_new_secure_take (pub, pub_len);
 
   return g_steal_pointer (&res);
 
@@ -732,7 +760,7 @@ fpi_sdcp_hash_claim (FpiSdcpClaim *claim,
   EVP_MD_CTX_free (sh256_ctx);
   EVP_MD_free (sha256);
 
-  res = g_bytes_new_take (hash, hash_len);
+  res = fpi_sdcp_bytes_new_secure_take (hash, hash_len);
   return g_steal_pointer (&res);
 
 out_error:
@@ -789,7 +817,7 @@ fpi_sdcp_key_agreement (GBytes  *host_private_key,
   EVP_PKEY_free (device_pkey);
   EVP_PKEY_free (host_pkey);
 
-  res = g_bytes_new_take (key_agreement, key_agreement_len);
+  res = fpi_sdcp_bytes_new_secure_take (key_agreement, key_agreement_len);
 
   return g_steal_pointer (&res);
 
@@ -848,7 +876,7 @@ fpi_sdcp_generate_random (GError **error)
       return NULL;
     }
 
-  res = g_bytes_new_take (random, SDCP_RANDOM_SIZE);
+  res = fpi_sdcp_bytes_new_secure_take (random, SDCP_RANDOM_SIZE);
 
   return g_steal_pointer (&res);
 }
@@ -916,7 +944,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
           g_bytes_get_data (application_keys, NULL),
           SDCP_APPLICATION_SECRET_SIZE);
 
-  out_app_secret = g_bytes_new_take (app_secret_buf, SDCP_APPLICATION_SECRET_SIZE);
+  out_app_secret = fpi_sdcp_bytes_new_secure_take (app_secret_buf, SDCP_APPLICATION_SECRET_SIZE);
 
   fp_dbg ("application_secret:");
   fp_dbg_hex_dump_gbytes (out_app_secret);
