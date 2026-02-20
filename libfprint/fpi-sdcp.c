@@ -228,8 +228,26 @@ fpi_sdcp_get_truststore (GError **error)
                                                    (*error)->message));
       goto out;
     }
+
   for (int i = 0; trustcert_names[i]; i++)
     {
+      if (g_str_has_prefix (trustcert_names[i], "SDCP Virtual"))
+        {
+          if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
+            {
+              fp_dbg ("Skipping test-only certificate (not in emulation mode): %s",
+                      trustcert_names[i]);
+              continue;
+            }
+
+          if (g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE"), "1") == 0)
+            {
+              fp_dbg ("Skipping test-only certificate (test-only): %s",
+                      trustcert_names[i]);
+              continue;
+            }
+        }
+
       fp_dbg ("Adding certificate to SDCP truststore: %s", trustcert_names[i]);
       trustcert_path = g_strconcat (truststore_resource_path, trustcert_names[i], NULL);
       trustcert_gb = g_resource_lookup_data (truststore_resource, trustcert_path, 0, error);

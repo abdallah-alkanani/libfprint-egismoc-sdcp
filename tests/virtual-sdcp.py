@@ -45,18 +45,46 @@ class VirtualSDCPBase(unittest.TestCase):
         del cls.ctx
 
     def setUp(self):
-        self.ctx = FPrint.Context()
         self.assertIsNotNone(self.dev)
         self.assertFalse(self.dev.is_open())
+
+    def tearDown(self):
+        self.assertFalse(self.dev.is_open())
+
+class VirtualSDCPOpenFailures(VirtualSDCPBase):
+
+    def test_fails_to_open_if_not_using_device_emulation(self):
+        del os.environ['FP_DEVICE_EMULATION']
+        self.addCleanup(os.environ.setdefault, 'FP_DEVICE_EMULATION', '1')
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_fails_to_open_if_device_certificate_is_untrusted(self):
+        os.environ['FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE'] = '1'
+        self.addCleanup(os.environ.pop, 'FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE', None)
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+
+class VirtualSDCPOpenedBase(VirtualSDCPBase):
+
+    def setUp(self):
+        super().setUp()
         self.dev.open_sync()
         self.assertTrue(self.dev.is_open())
 
     def tearDown(self):
         self.dev.close_sync()
-        self.assertFalse(self.dev.is_open())
-        del self.ctx
+        super().tearDown()
 
-class VirtualSDCP(VirtualSDCPBase):
+
+class VirtualSDCP(VirtualSDCPOpenedBase):
 
     def test_connect(self):
         # Nothing to do here since setUp and tearDown will open and close the device
@@ -123,7 +151,7 @@ class VirtualSDCP(VirtualSDCPBase):
         # Ensure the second print from list is the same as new_print2
         self.assertTrue(prints[1].equal(new_print2))
 
-class VirtualSDCPNoReconnect(VirtualSDCPBase):
+class VirtualSDCPNoReconnect(VirtualSDCPOpenedBase):
 
     @classmethod
     def setUpClass(cls):
