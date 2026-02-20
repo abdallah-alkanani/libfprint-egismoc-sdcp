@@ -336,12 +336,14 @@ endforeach
 # Run udev rule generator with fatal warnings
 envs.set('UDEV_HWDB', udev_hwdb.full_path())
 envs.set('UDEV_HWDB_CHECK_CONTENTS', default_drivers_are_enabled ? '1' : '0')
-envs.set('G_MESSAGES_DEBUG', '')
+
+hwdb_envs = envs
+hwdb_envs.set('G_MESSAGES_DEBUG', '')
 test('udev-hwdb',
      find_program('test-generated-hwdb.sh'),
      depends: udev_hwdb,
      suite: ['data', 'no-valgrind'],
-     env: envs)
+     env: hwdb_envs)
 
 appstreamcli = find_program('appstreamcli', required: false)
 if appstreamcli.found()
