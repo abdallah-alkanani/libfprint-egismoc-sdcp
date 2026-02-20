@@ -186,9 +186,9 @@ fpi_sdcp_device_open (FpSdcpDevice *self)
 void
 fpi_sdcp_device_connect (FpSdcpDevice *self)
 {
+  g_autoptr(GError) error = NULL;
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
-  GError *error = NULL;
 
   g_clear_pointer (&priv->host_private_key, g_bytes_unref);
   g_clear_pointer (&priv->host_public_key, g_bytes_unref);
@@ -202,7 +202,7 @@ fpi_sdcp_device_connect (FpSdcpDevice *self)
         {
           fpi_sdcp_device_connect_complete (self,
                                             NULL, NULL, NULL,
-                                            error);
+                                            g_steal_pointer (&error));
           return;
         }
 
@@ -212,7 +212,7 @@ fpi_sdcp_device_connect (FpSdcpDevice *self)
         {
           fpi_sdcp_device_connect_complete (self,
                                             NULL, NULL, NULL,
-                                            error);
+                                            g_steal_pointer (&error));
           return;
         }
     }
@@ -542,6 +542,7 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                           "SDCP Connect verification failed: %s",
                                                           error->message));
+      g_clear_error (&error);
       return;
     }
 

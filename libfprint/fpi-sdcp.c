@@ -805,7 +805,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
   /* SDCP Connect: 5.i. Perform key agreement */
 
   key_agreement = fpi_sdcp_key_agreement (host_private_key, claim->firmware_public_key, error);
-  if (*error)
+  if (!key_agreement)
     goto out_error;
 
   fp_dbg ("key_agreement:");
@@ -815,7 +815,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
 
   master_secret = fpi_sdcp_kdf (key_agreement, "master secret", host_random, device_random,
                                 SDCP_MASTER_SECRET_SIZE, error);
-  if (*error)
+  if (!master_secret)
     goto out_error;
 
   fp_dbg ("master_secret:");
@@ -825,7 +825,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
 
   application_keys = fpi_sdcp_kdf (master_secret, "application keys", NULL, NULL,
                                    SDCP_APPLICATION_KEYS_SIZE, error);
-  if (*error)
+  if (!application_keys)
     goto out_error;
 
   fp_dbg ("application_keys:");
@@ -846,11 +846,11 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
   /* SDCP Connect: 5.iv. Validate the MAC over H(claim) */
 
   claim_hash = fpi_sdcp_hash_claim (claim, error);
-  if (*error)
+  if (!claim_hash)
     goto out_error;
 
   claim_mac = fpi_sdcp_mac (out_app_secret, "connect", claim_hash, NULL, error);
-  if (*error)
+  if (!claim_mac)
     goto out_error;
 
   fp_dbg ("Device MAC:");
@@ -859,7 +859,10 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
   fp_dbg ("Host MAC:");
   fp_dbg_hex_dump_gbytes (claim_mac);
 
-  if (g_bytes_equal (mac, claim_mac))
+  if (g_bytes_get_size (mac) == g_bytes_get_size (claim_mac) &&
+      CRYPTO_memcmp (g_bytes_get_data (mac, NULL),
+                     g_bytes_get_data (claim_mac, NULL),
+                     g_bytes_get_size (mac)) == 0)
     {
       fp_dbg ("SDCP ConnectResponse claim validated successfully");
     }
@@ -891,18 +894,17 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
 
       print_certificate (cert);
 
-      if (fpi_sdcp_verify_certificate (cert, error))
-        {
-          fp_dbg ("SDCP model ceritifcate verified successfully");
-        }
-      else
+      if (!fpi_sdcp_verify_certificate (cert, error))
         {
           fp_dbg ("SDCP model certificate verification failed");
           goto out;
         }
 
+      fp_dbg ("SDCP model certificate verified successfully");
+
       if (verify_signatures)
         {
+          g_autoptr(GError) local_error = NULL;
           /* Get the certificate's public key */
 
           cert_public_pkey = X509_get_pubkey (cert);
@@ -912,7 +914,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
                                  fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                            "Error getting public key from "
                                                            "model certificate"));
-              goto out;
+              goto out_error;
             }
 
           /* Verify(pk_m, H(pk_d), s_m) */
@@ -925,12 +927,10 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
                                           claim->device_public_key,
                                           NULL,
                                           claim->model_signature,
-                                          error))
+                                          &local_error))
             {
-              g_propagate_error (error,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                           "SDCP model signature verification "
-                                                           "failed"));
+              g_propagate_prefixed_error (error, g_steal_pointer (&local_error),
+                                          "SDCP model signature verification failed: ");
               goto out_error;
             }
 
@@ -957,12 +957,10 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
                                           claim->firmware_hash,
                                           claim->firmware_public_key,
                                           claim->model_signature,
-                                          error))
+                                          &local_error))
             {
-              g_propagate_error (error,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                           "SDCP device signature verification "
-                                                           "failed"));
+              g_propagate_prefixed_error (error, g_steal_pointer (&local_error),
+                                          "SDCP device signature verification failed: ");
               goto out_error;
             }
 
