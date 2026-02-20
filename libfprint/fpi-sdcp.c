@@ -1016,7 +1016,7 @@ fpi_sdcp_verify_connect (GBytes       *host_private_key,
             goto out_error;
 
           if (!fpi_sdcp_verify_signature (device_public_pkey,
-                                          "C001",
+                                          "\xC0\x01",
                                           claim->firmware_hash,
                                           claim->firmware_public_key,
                                           claim->model_signature,
