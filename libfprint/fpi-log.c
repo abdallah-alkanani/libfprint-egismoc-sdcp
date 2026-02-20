@@ -20,13 +20,10 @@
 
 #include "fpi-log.h"
 
-#undef fp_dbg_hex_dump_bytes
-#undef fp_dbg_hex_dump_gbytes
-
 void
-fp_dbg_hex_dump_bytes (const gchar  *log_domain,
-                       const guint8 *buf,
-                       gsize         len)
+  (fpi_dbg_hex_dump_bytes) (const gchar  *log_domain,
+                            const guint8 *buf,
+                            gsize len)
 {
   g_autoptr(GString) line = NULL;
 
@@ -47,11 +44,11 @@ fp_dbg_hex_dump_bytes (const gchar  *log_domain,
 }
 
 void
-fp_dbg_hex_dump_gbytes (const gchar *log_domain,
-                        GBytes      *gbytes)
+  (fpi_dbg_hex_dump_gbytes) (const gchar *log_domain,
+                             GBytes      *gbytes)
 {
   gsize len = 0;
   const guint8 *buf = g_bytes_get_data (gbytes, &len);
 
-  fp_dbg_hex_dump_bytes (log_domain, buf, len);
+  (fpi_dbg_hex_dump_bytes) (log_domain, buf, len);
 }

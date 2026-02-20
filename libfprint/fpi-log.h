@@ -97,14 +97,12 @@
  */
 #define BUG() BUG_ON (1)
 
+
 /*
  * Custom-defined logging functions are wrapped in macros for convenience so
  * that the caller does not have to pass G_LOG_DOMAIN every time.
  */
 
-void fp_dbg_hex_dump_bytes (const gchar  *log_domain,
-                            const guint8 *buf,
-                            gsize         len);
 
 /**
  * fp_dbg_hex_dump_bytes:
@@ -113,10 +111,12 @@ void fp_dbg_hex_dump_bytes (const gchar  *log_domain,
  *
  * Prints hex dump of @buf to fp_dbg()
  */
-#define fp_dbg_hex_dump_bytes(buf, len) fp_dbg_hex_dump_bytes (G_LOG_DOMAIN, buf, len)
+#define fp_dbg_hex_dump_bytes(buf, len) \
+  (fpi_dbg_hex_dump_bytes) (G_LOG_DOMAIN, buf, len)
 
-void fp_dbg_hex_dump_gbytes (const gchar *log_domain,
-                             GBytes      *gbytes);
+void (fpi_dbg_hex_dump_bytes) (const gchar  *log_domain,
+                               const guint8 *buf,
+                               gsize len);
 
 /**
  * fp_dbg_hex_dump_gbytes:
@@ -124,4 +124,8 @@ void fp_dbg_hex_dump_gbytes (const gchar *log_domain,
  *
  * Prints hex dump of @gbytes to fp_dbg()
  */
-#define fp_dbg_hex_dump_gbytes(gbytes) fp_dbg_hex_dump_gbytes (G_LOG_DOMAIN, gbytes)
+#define fp_dbg_hex_dump_gbytes(gbytes) \
+  (fpi_dbg_hex_dump_gbytes) (G_LOG_DOMAIN, gbytes)
+
+void (fpi_dbg_hex_dump_gbytes) (const gchar *log_domain,
+                                GBytes      *gbytes);
