@@ -23,8 +23,12 @@
 #include "fpi-sdcp.h"
 #include "fpi-sdcp-device.h"
 
-/* We can re-use the test payloads from virtual-sdcp */
+/* We can re-use the device test payloads from virtual-sdcp */
 #include "drivers/virtual-sdcp.h"
+
+/* host keys used for the deterministic key exchange test */
+static const gchar host_private_key_hex[] = "8400ed14579cdf11586477e836e8cb52708441c1c2a447c218c5bbc2d118fbc7";
+static const gchar host_random_hex[]      = "d877403abe82f4d97e1448c5052d83a532a45e56ef049cbbf981137520e713bf";
 
 /******************************************************************************/
 
@@ -68,6 +72,64 @@ get_fake_sdcp_claim (void)
   return g_steal_pointer (&claim);
 }
 
+/* Compute the connect MAC from the application secret and the fake device claim */
+static GBytes *
+compute_connect_mac (void)
+{
+  g_autoptr(GError) error = NULL;
+  g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
+  g_autoptr(GBytes) app_secret = g_bytes_from_hex (application_secret_hex);
+  g_autoptr(GBytes) claim_hash = fpi_sdcp_hash_claim (claim, &error);
+
+  g_assert_no_error (error);
+
+  GBytes *mac = fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_CONNECT, claim_hash, NULL, &error);
+
+  g_assert_no_error (error);
+  return mac;
+}
+
+/* Compute the enrollment ID from the application secret and fixed test nonce */
+static GBytes *
+compute_enrollment_id (void)
+{
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GBytes) app_secret = g_bytes_from_hex (application_secret_hex);
+  g_autoptr(GBytes) nonce = g_bytes_from_hex (enrollment_nonce_hex);
+
+  GBytes *id = fpi_sdcp_generate_enrollment_id (app_secret, NULL, nonce, &error);
+
+  g_assert_no_error (error);
+  return id;
+}
+
+/* Compute the identify MAC from the application secret, identify nonce, and enrollment ID */
+static GBytes *
+compute_identify_mac (GBytes *enrollment_id)
+{
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GBytes) app_secret = g_bytes_from_hex (application_secret_hex);
+  g_autoptr(GBytes) nonce = g_bytes_from_hex (identify_nonce_hex);
+
+  GBytes *mac = fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_IDENTIFY, nonce, enrollment_id, &error);
+
+  g_assert_no_error (error);
+  return mac;
+}
+
+/* Compute the reconnect MAC from the application secret and a given random */
+static GBytes *
+compute_reconnect_mac (GBytes *random)
+{
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GBytes) app_secret = g_bytes_from_hex (application_secret_hex);
+
+  GBytes *mac = fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_RECONNECT, random, NULL, &error);
+
+  g_assert_no_error (error);
+  return mac;
+}
+
 /******************************************************************************/
 
 static void
@@ -77,7 +139,7 @@ test_generate_enrollment_id (void)
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) application_secret = g_bytes_from_hex (application_secret_hex);
   g_autoptr(GBytes) nonce = g_bytes_from_hex (enrollment_nonce_hex);
-  g_autoptr(GBytes) expected_id = g_bytes_from_hex (enrollment_id_hex);
+  g_autoptr(GBytes) expected_id = compute_enrollment_id ();
 
   id = fpi_sdcp_generate_enrollment_id (application_secret, NULL, nonce, &error);
 
@@ -98,8 +160,8 @@ test_verify_identify (void)
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) application_secret = g_bytes_from_hex (application_secret_hex);
   g_autoptr(GBytes) nonce = g_bytes_from_hex (identify_nonce_hex);
-  g_autoptr(GBytes) id = g_bytes_from_hex (enrollment_id_hex);
-  g_autoptr(GBytes) mac = g_bytes_from_hex (identify_mac_hex);
+  g_autoptr(GBytes) id = compute_enrollment_id ();
+  g_autoptr(GBytes) mac = compute_identify_mac (id);
 
   g_assert_true (fpi_sdcp_verify_identify (application_secret, NULL, nonce, id, mac, &error));
   g_assert_no_error (error);
@@ -110,9 +172,10 @@ test_verify_reconnect (void)
 {
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) application_secret = g_bytes_from_hex (application_secret_hex);
-  g_autoptr(GBytes) random = g_bytes_from_hex (reconnect_random_hex);
-  g_autoptr(GBytes) mac = g_bytes_from_hex (reconnect_mac_hex);
+  g_autoptr(GBytes) random = fpi_sdcp_generate_random (&error);
+  g_autoptr(GBytes) mac = compute_reconnect_mac (random);
 
+  g_assert_no_error (error);
   g_assert_true (fpi_sdcp_verify_reconnect (application_secret, NULL, random, mac, &error));
   g_assert_no_error (error);
 }
@@ -126,7 +189,7 @@ test_verify_connect (void)
   g_autoptr(GBytes) host_private_key = g_bytes_from_hex (host_private_key_hex);
   g_autoptr(GBytes) host_random = g_bytes_from_hex (host_random_hex);
   g_autoptr(GBytes) device_random = g_bytes_from_hex (device_random_hex);
-  g_autoptr(GBytes) connect_mac = g_bytes_from_hex (connect_mac_hex);
+  g_autoptr(GBytes) connect_mac = compute_connect_mac ();
   FpiSdcpClaim *claim = get_fake_sdcp_claim ();
 
   g_autoptr(GBytes) expected_application_secret = g_bytes_from_hex (application_secret_hex);

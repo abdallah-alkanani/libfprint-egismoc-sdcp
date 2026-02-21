@@ -199,38 +199,6 @@ if old_model_ca.exists():
     old_model_ca.unlink()
     print(f"Removed old self-signed model CA: {old_model_ca.relative_to(here.parent.parent)}")
 print()
-
-# ---------------------------------------------------------------------------
-# Recompute connect_mac_hex (depends on the certificate bytes)
-#
-# These values come from virtual-sdcp.h and must remain in sync.
-# ---------------------------------------------------------------------------
-
-import hashlib, hmac as _hmac
-
-device_public_key_hex  = "04e2787890a684f95b96b9a2316ca8d3d33d4d79ff4c89dc6f9e888e973990d1d3154133dcc8bd33b99af9dbf0673390d404d092498a3f214cd93f9b9f28fb5f66"
-firmware_public_key_hex= "04f06a84ab51a3a6e8ff46868f91dd720e4cdad21f2e090d11e8f9bfc2ea19ee1b5eac850b4532968a9399f76cd779e7723e8c2ca73b597c0df5f73b94a36f2b6c"
-firmware_hash_hex      = "c3bf47ea1f4a4a605470313cacb3a44f4a461f68c6faeab07e737610cb5ac835"
-model_signature_hex    = "febe6ba3107813e185f05189e69ae79d9f7a40802582d94324459844c8b97ec6c5daed5462276cb8a193c33e350424b0305d63d79a93a9188dcfc0cb5595f6c1"
-device_signature_hex   = "10cc57dd8dafb463510a7327a5fca49b698e999b36448e2023eaf0dff0b0d4a34f1caf4e872b77364a0a00d7476554d0324c4cc931937e232a0315837d696c06"
-application_secret_hex = "13330ba3135ecf5dc71cede01a886540771efab35c8ba053902b2c1ee7de6efe"
-
-pk_d    = bytes.fromhex(device_public_key_hex)
-pk_f    = bytes.fromhex(firmware_public_key_hex)
-h_f     = bytes.fromhex(firmware_hash_hex)
-s_m     = bytes.fromhex(model_signature_hex)
-s_d     = bytes.fromhex(device_signature_hex)
-app_sec = bytes.fromhex(application_secret_hex)
-
-# claim_hash = SHA256(cert || pk_d || pk_f || h_f || s_m || s_d)
-claim_hash = hashlib.sha256(der + pk_d + pk_f + h_f + s_m + s_d).digest()
-# connect_mac = HMAC-SHA256(app_secret, "connect\0" || claim_hash)
-# Note: fpi_sdcp_mac uses strlen(label)+1, so the null terminator is included.
-connect_mac = _hmac.new(app_sec, b"connect\x00" + claim_hash, hashlib.sha256).digest()
-
-print(f"/* Update connect_mac_hex in virtual-sdcp.h: */")
-print(f'static const gchar connect_mac_hex[]         = "{connect_mac.hex()}";')
-print()
 print("Note: fpi_sdcp_get_truststore() only loads certs whose filename starts")
 print("with 'SDCP Virtual' when FP_DEVICE_EMULATION is set, so this test CA is")
 print("never trusted in production builds.")

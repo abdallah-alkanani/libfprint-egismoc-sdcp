@@ -93,54 +93,107 @@ get_fake_sdcp_claim (const gchar *certificate_hex)
 
 /******************************************************************************/
 
+static GBytes *
+get_application_secret (void)
+{
+  return g_bytes_from_hex (application_secret_hex);
+}
+
+static GBytes *
+compute_connect_mac (FpiSdcpClaim *claim, GError **error)
+{
+  g_autoptr(GBytes) app_secret = get_application_secret ();
+  g_autoptr(GBytes) claim_hash = fpi_sdcp_hash_claim (claim, error);
+
+  if (!claim_hash)
+    return NULL;
+
+  return fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_CONNECT,
+                       claim_hash, NULL, error);
+}
+
 static void
 dev_identify (FpSdcpDevice *sdcp_device)
 {
-  fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
   FpDeviceVirtualSdcp *self = FPI_DEVICE_VIRTUAL_SDCP (sdcp_device);
+
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GBytes) app_secret = NULL;
+  g_autoptr(GBytes) enroll_nonce = NULL;
+  g_autoptr(GBytes) identify_nonce = NULL;
   g_autoptr(GBytes) enrollment_id = NULL;
   g_autoptr(GBytes) identify_mac = NULL;
-  GBytes *identify_nonce = NULL;
 
-  if (self->print_ids->len > 0)
-    {
-      /*
-       * Pretend that the virtual device identified the first print.
-       * Since we used a pre-generated enrollment_id for it, we can also use the
-       * matching pre-generated test identify data for its identification.
-       */
-      identify_nonce = g_bytes_from_hex (identify_nonce_hex);
-      enrollment_id = g_bytes_from_hex (enrollment_id_hex);
-      fpi_sdcp_device_set_identify_data (sdcp_device, identify_nonce);
-      identify_mac = g_bytes_from_hex (identify_mac_hex);
+  fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 
-      fpi_sdcp_device_identify_complete (sdcp_device, enrollment_id, identify_mac, NULL);
-    }
-  else
+  if (self->print_ids->len == 0)
     {
       fpi_sdcp_device_identify_complete (sdcp_device, NULL, NULL,
                                          fpi_device_error_new (FP_DEVICE_ERROR_DATA_NOT_FOUND));
+      return;
     }
+
+  /*
+   * Pretend that the virtual device identified the first print.
+   * Compute the enrollment ID and identify MAC at runtime from the
+   * application secret and the fixed test nonces.
+   */
+  app_secret = get_application_secret ();
+  enroll_nonce = g_bytes_from_hex (enrollment_nonce_hex);
+  identify_nonce = g_bytes_from_hex (identify_nonce_hex);
+
+  enrollment_id = fpi_sdcp_generate_enrollment_id (app_secret, NULL, enroll_nonce, &error);
+  if (!enrollment_id)
+    {
+      fpi_sdcp_device_identify_complete (sdcp_device, NULL, NULL, error);
+      return;
+    }
+
+  identify_mac = fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_IDENTIFY,
+                               identify_nonce, enrollment_id, &error);
+  if (!identify_mac)
+    {
+      fpi_sdcp_device_identify_complete (sdcp_device, NULL, NULL, error);
+      return;
+    }
+
+  fpi_sdcp_device_set_identify_data (sdcp_device, g_steal_pointer (&identify_nonce));
+  fpi_sdcp_device_identify_complete (sdcp_device, enrollment_id, identify_mac, NULL);
 }
 
 static void
 dev_enroll_commit (FpSdcpDevice *sdcp_device, GBytes *id)
 {
-  fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
+  g_autoptr(GBytes) print_id = NULL;
   FpDeviceVirtualSdcp *self = FPI_DEVICE_VIRTUAL_SDCP (sdcp_device);
-  g_autoptr(GBytes) expected_first_print_id = NULL;
-  GBytes *print_id;
+
+  fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 
   print_id = g_bytes_new (g_bytes_get_data (id, NULL), g_bytes_get_size (id));
 
   /*
-   * If this is the first print, it is probably good if we make sure the
-   * internal API assigned it the expected pre-known ID
+   * If this is the first print, verify the internal API assigned it the
+   * expected ID derived from the enrollment nonce.
    */
   if (self->print_ids->len == 0)
     {
-      expected_first_print_id = g_bytes_from_hex (enrollment_id_hex);
-      if (!g_bytes_equal (print_id, expected_first_print_id))
+      g_autoptr(GError) error = NULL;
+      g_autoptr(GBytes) app_secret = NULL;
+      g_autoptr(GBytes) nonce = NULL;
+      g_autoptr(GBytes) expected_id = NULL;
+
+      app_secret = get_application_secret ();
+      nonce = g_bytes_from_hex (enrollment_nonce_hex);
+      expected_id = fpi_sdcp_generate_enrollment_id (app_secret, NULL,
+                                                     nonce, &error);
+
+      if (!expected_id)
+        {
+          fpi_sdcp_device_enroll_commit_complete (sdcp_device, error);
+          return;
+        }
+
+      if (!g_bytes_equal (print_id, expected_id))
         {
           fpi_sdcp_device_enroll_commit_complete (sdcp_device,
                                                   fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
@@ -220,7 +273,8 @@ dev_reconnect (FpSdcpDevice *sdcp_device)
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) random = NULL;
-  g_autoptr(GBytes) reconnect_mac = g_bytes_from_hex (reconnect_mac_hex);
+  g_autoptr(GBytes) app_secret = get_application_secret ();
+  g_autoptr(GBytes) reconnect_mac = NULL;
 
   /*
    * Normally, a driver would fetch the reconnect data and then send it to the
@@ -233,11 +287,8 @@ dev_reconnect (FpSdcpDevice *sdcp_device)
   g_assert (random);
   g_assert (g_bytes_get_size (random) == FPI_SDCP_RANDOM_SIZE);
 
-  /*
-   * In emulation mode (FP_DEVICE_EMULATION=1), a different hard-coded random is
-   * set in fpi-sdcp-device, which was the same random used to generate the
-   * reconnect_mac value provided here
-   */
+  reconnect_mac = fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_RECONNECT,
+                                random, NULL, &error);
 
   fpi_sdcp_device_reconnect_complete (sdcp_device, reconnect_mac, error);
 }
@@ -282,19 +333,13 @@ dev_connect (FpSdcpDevice *sdcp_device)
   model_certificate = model_certificate_hex;
 
   if (use_expired_certificate ())
-    {
-      model_certificate = expired_model_certificate_hex;
-      connect_mac = g_bytes_from_hex (expired_connect_mac_hex);
-    }
-  else
-    {
-      connect_mac = g_bytes_from_hex (connect_mac_hex);
-    }
+    model_certificate = expired_model_certificate_hex;
+
+  claim = get_fake_sdcp_claim (model_certificate);
+  connect_mac = compute_connect_mac (claim, &error);
 
   old_flags = sdcp_cls->verification_flags;
-  claim = get_fake_sdcp_claim (model_certificate);
-
-  if (use_expired_certificate () && allow_expired_certificate ())
+  if (connect_mac && use_expired_certificate () && allow_expired_certificate ())
     sdcp_cls->verification_flags |=
       FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME;
 

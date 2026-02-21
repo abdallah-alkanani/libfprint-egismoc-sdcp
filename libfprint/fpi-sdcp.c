@@ -492,7 +492,7 @@ fpi_sdcp_kdf (GBytes      *key,
   return g_steal_pointer (&res);
 }
 
-static GBytes *
+GBytes *
 fpi_sdcp_mac (GBytes      *application_secret,
               const gchar *label,
               GBytes      *data_a,
@@ -736,7 +736,7 @@ out_error:
   return NULL;
 }
 
-static GBytes *
+GBytes *
 fpi_sdcp_hash_claim (FpiSdcpClaim *claim,
                      GError      **error)
 {

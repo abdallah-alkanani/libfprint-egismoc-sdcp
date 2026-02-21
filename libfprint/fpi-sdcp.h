@@ -139,3 +139,34 @@ GBytes *fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
                                          const gchar *label,
                                          GBytes      *nonce,
                                          GError     **error);
+
+/**
+ * fpi_sdcp_mac:
+ * @application_secret: The application secret to use as the HMAC key
+ * @label: Label string (included with a trailing NUL byte), or %NULL
+ * @data_a: First data buffer, or %NULL
+ * @data_b: Second data buffer, or %NULL
+ * @error: (out): #GError in case the return value is %NULL
+ *
+ * Computes HMAC-SHA256(@application_secret, @label || @data_a || @data_b).
+ *
+ * Returns: A new #GBytes with the MAC of length %FPI_SDCP_MAC_SIZE
+ **/
+GBytes *fpi_sdcp_mac (GBytes      *application_secret,
+                      const gchar *label,
+                      GBytes      *data_a,
+                      GBytes      *data_b,
+                      GError     **error);
+
+/**
+ * fpi_sdcp_hash_claim:
+ * @claim: The #FpiSdcpClaim to hash
+ * @error: (out): #GError in case the return value is %NULL
+ *
+ * Computes SHA256 over the claim fields (model_certificate || device_public_key
+ * || firmware_public_key || firmware_hash || model_signature || device_signature).
+ *
+ * Returns: A new #GBytes with the SHA256 hash
+ **/
+GBytes *fpi_sdcp_hash_claim (FpiSdcpClaim *claim,
+                             GError      **error);

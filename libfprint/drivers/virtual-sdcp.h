@@ -22,14 +22,6 @@
 
 #include "fpi-compat.h"
 
-/* host keys */
-
-static const gchar host_private_key_hex[] = "8400ed14579cdf11586477e836e8cb52708441c1c2a447c218c5bbc2d118fbc7";
-static const gchar host_public_key_hex[]  = "0452f056ffb9c6728654771a3629b770767b19a2106a4916fb81ba06ef6797c4"
-                                            "a3df672ade0e9116d1abe278a8223abde4958d62d4ff6882159f0617c6f8ce10"
-                                            "bf";
-static const gchar host_random_hex[]      = "d877403abe82f4d97e1448c5052d83a532a45e56ef049cbbf981137520e713bf";
-
 /* device keys */
 
 static const gchar device_random_hex[]       = "6e2f6c1abef2a1973fb1315a17e209fdb0c78520f1fd6a85d294d7aeb40a04a7";
@@ -70,24 +62,15 @@ static const gchar model_signature_hex[]     = "febe6ba3107813e185f05189e69ae79d
                                                "c5daed5462276cb8a193c33e350424b0305d63d79a93a9188dcfc0cb5595f6c1";
 static const gchar device_signature_hex[]    = "10cc57dd8dafb463510a7327a5fca49b698e999b36448e2023eaf0dff0b0d4a3"
                                                "4f1caf4e872b77364a0a00d7476554d0324c4cc931937e232a0315837d696c06";
-static const gchar connect_mac_hex[]         = "587099769025b54ddbae2a7a2d9166b930929e6f0515433cf2e126f71e024cd4";
-static const gchar expired_connect_mac_hex[] = "c205c6820701e8656c2c5dad9707b62bb6489368239281180e3bcb8cedc82592";
 
 /* expected application_secret based on above */
 
 static const gchar application_secret_hex[] = "13330ba3135ecf5dc71cede01a886540771efab35c8ba053902b2c1ee7de6efe";
 
-/* test verify_reconnect values */
-
-static const gchar reconnect_random_hex[] = "8a7451c1d3a8dca1c1330ca50d73454b351a49f46c8e9dcee15c964d295c31c9";
-static const gchar reconnect_mac_hex[]    = "bf3f3bb3bd6ecb2784c160f526f7bc3b3ca8faf5557194c48e0024a0493903c7";
-
-/* test enrollment_id values */
+/* enrollment nonce used by the virtual driver for the first enrolled print */
 
 static const gchar enrollment_nonce_hex[] = "c2101c44c9a667bba397e81f48b143398603e2c9335a68b409e1dbe71e005ca2";
-static const gchar enrollment_id_hex[]    = "67109dc70a216331f1580ddac601915929c1ff6c9bcba6544ba572c660c3d91e";
 
-/* test verify_identify values */
+/* identify nonce used by the virtual driver for identify operations */
 
 static const gchar identify_nonce_hex[] = "3a1b506f5bec089059acefb9b44dfbdea7a599ee9aa267e5252664d60b798053";
-static const gchar identify_mac_hex[]   = "53a723eef40713094a90c5ef9996cbd6ba268e30676cd7107705a6c3e3e1eff9";
