@@ -231,7 +231,7 @@ dev_reconnect (FpSdcpDevice *sdcp_device)
   fpi_sdcp_device_get_reconnect_data (sdcp_device, &random);
 
   g_assert (random);
-  g_assert (g_bytes_get_size (random) == SDCP_RANDOM_SIZE);
+  g_assert (g_bytes_get_size (random) == FPI_SDCP_RANDOM_SIZE);
 
   /*
    * In emulation mode (FP_DEVICE_EMULATION=1), a different hard-coded random is
@@ -256,10 +256,10 @@ dev_connect (FpSdcpDevice *sdcp_device)
   fpi_sdcp_device_get_connect_data (sdcp_device, &host_random, &host_public_key);
 
   g_assert (host_random);
-  g_assert (g_bytes_get_size (host_random) == SDCP_RANDOM_SIZE);
+  g_assert (g_bytes_get_size (host_random) == FPI_SDCP_RANDOM_SIZE);
 
   g_assert (host_public_key);
-  g_assert (g_bytes_get_size (host_public_key) == SDCP_PUBLIC_KEY_SIZE);
+  g_assert (g_bytes_get_size (host_public_key) == FPI_SDCP_PUBLIC_KEY_SIZE);
 
   fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, connect_mac, error);
 }

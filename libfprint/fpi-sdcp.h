@@ -39,7 +39,7 @@ gboolean fpi_sdcp_generate_host_key (GBytes **private_key,
  * fpi_sdcp_generate_random:
  * @error: (out): #GError in case the return value is %NULL
  *
- * Returns: A new #GBytes with a secure random of length %SDCP_RANDOM_SIZE
+ * Returns: A new #GBytes with a secure random of length %FPI_SDCP_RANDOM_SIZE
  **/
 GBytes *fpi_sdcp_generate_random (GError **error);
 
@@ -54,14 +54,14 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  *   during the ConnectResponse validation.
  *   See #FpiDeviceSdcpVerificationFlags for details.
  * @application_secret: (out) (transfer full): A new #GBytes with the derived
- *   application secret (s) of length %SDCP_APPLICATION_SECRET_SIZE
+ *   application secret (s) of length %FPI_SDCP_APPLICATION_SECRET_SIZE
  * @error: (out): #GError in case the return value is %NULL
  *
  * High level function which internally handles the derivation of all necessary
  * SDCP-related keys and secrets from the device's ConnectResponse and derives
  * the application secret for use with all other SDCP-related functions.
  * The KDF and MAC labels used during key derivation are taken from the
- * @claim label fields; %NULL fields fall back to the %SDCP_DEFAULT_LABEL_*
+ * @claim label fields; %NULL fields fall back to the %FPI_SDCP_DEFAULT_LABEL_*
  * constants.
  *
  * This function will also perform a validation of the ConnectResponse MAC and
@@ -85,7 +85,7 @@ gboolean fpi_sdcp_verify_connect (GBytes                        *host_private_ke
 /**
  * fpi_sdcp_verify_reconnect:
  * @application_secret: The host's derived application secret (s)
- * @label: HMAC label, or %NULL to use %SDCP_DEFAULT_LABEL_RECONNECT
+ * @label: HMAC label, or %NULL to use %FPI_SDCP_DEFAULT_LABEL_RECONNECT
  * @random: The host-generated random sent to the device's Reconnect
  *   command (r)
  * @mac: The MAC provided in the device's ReconnectResponse (m)
@@ -104,7 +104,7 @@ gboolean fpi_sdcp_verify_reconnect (GBytes      *application_secret,
 /**
  * fpi_sdcp_verify_identify:
  * @application_secret: The host's derived application secret (s)
- * @label: HMAC label, or %NULL to use %SDCP_DEFAULT_LABEL_IDENTIFY
+ * @label: HMAC label, or %NULL to use %FPI_SDCP_DEFAULT_LABEL_IDENTIFY
  * @nonce: The host-generated nonce sent to the device's Identify
  *   command (n)
  * @id: The ID provided in the device's AuthorizedIdentity (id)
@@ -125,7 +125,7 @@ gboolean fpi_sdcp_verify_identify (GBytes      *application_secret,
 /**
  * fpi_sdcp_generate_enrollment_id:
  * @application_secret: The host's derived application secret (s)
- * @label: HMAC label, or %NULL to use %SDCP_DEFAULT_LABEL_ENROLL
+ * @label: HMAC label, or %NULL to use %FPI_SDCP_DEFAULT_LABEL_ENROLL
  * @nonce: The nonce received from the device in response to the
  *   EnrollBegin command (n)
  * @error: (out): #GError in case the return value is %NULL
@@ -133,7 +133,7 @@ gboolean fpi_sdcp_verify_identify (GBytes      *application_secret,
  * Generates a new id for use with the device's EnrollCommit command.
  *
  * Returns: A new #GBytes with the generated enrollment id of length
- * %SDCP_ENROLLMENT_ID_SIZE
+ * %FPI_SDCP_ENROLLMENT_ID_SIZE
  **/
 GBytes *fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
                                          const gchar *label,

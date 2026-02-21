@@ -140,7 +140,7 @@ test_verify_connect (void)
                                           &error));
 
   g_assert_null (error);
-  g_assert (g_bytes_get_size (application_secret) == SDCP_APPLICATION_SECRET_SIZE);
+  g_assert (g_bytes_get_size (application_secret) == FPI_SDCP_APPLICATION_SECRET_SIZE);
 
   fp_dbg ("application_secret:");
   fp_dbg_hex_dump_gbytes (application_secret);
@@ -162,7 +162,7 @@ test_generate_random (void)
   random = fpi_sdcp_generate_random (&error);
 
   g_assert_null (error);
-  g_assert (g_bytes_get_size (random) == SDCP_RANDOM_SIZE);
+  g_assert (g_bytes_get_size (random) == FPI_SDCP_RANDOM_SIZE);
 
   fp_dbg ("random:");
   fp_dbg_hex_dump_gbytes (random);
@@ -187,7 +187,7 @@ test_generate_host_key (void)
   fp_dbg_hex_dump_gbytes (private_key);
 
   g_bytes_get_data (public_key, &len);
-  g_assert (len == SDCP_PUBLIC_KEY_SIZE);
+  g_assert (len == FPI_SDCP_PUBLIC_KEY_SIZE);
 
   fp_dbg ("public_key:");
   fp_dbg_hex_dump_gbytes (public_key);

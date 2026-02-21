@@ -112,28 +112,29 @@ fpi_openssl_free_wrapper (void *ptr)
 static GBytes *
 raw_ecdsa_sig_to_der (GBytes *raw_sig)
 {
-  const guint8 *data = g_bytes_get_data (raw_sig, NULL);
-  gsize len = g_bytes_get_size (raw_sig);
+  gsize len;
+  const guint8 *data = g_bytes_get_data (raw_sig, &len);
   ECDSA_SIG *sig = NULL;
   BIGNUM *r = NULL, *s = NULL;
   guint8 *der = NULL;
   int der_len;
 
-  if (len != 64)
+  if (len != FPI_SDCP_SIGNATURE_SIZE)
     return NULL;
 
   sig = ECDSA_SIG_new ();
   if (!sig)
     return NULL;
 
-  r = BN_bin2bn (data,      32, NULL);
-  s = BN_bin2bn (data + 32, 32, NULL);
+  r = BN_bin2bn (data, FPI_SDCP_SIGNATURE_SIZE / 2, NULL);
+  s = BN_bin2bn (data + FPI_SDCP_SIGNATURE_SIZE / 2,
+                 FPI_SDCP_SIGNATURE_SIZE / 2, NULL);
 
   /* ECDSA_SIG_set0 takes ownership of r and s on success */
   if (!r || !s || !ECDSA_SIG_set0 (sig, r, s))
     {
-      BN_free (r);
-      BN_free (s);
+      g_clear_pointer (&r, BN_free);
+      g_clear_pointer (&s, BN_free);
       ECDSA_SIG_free (sig);
       return NULL;
     }
@@ -534,11 +535,11 @@ fpi_sdcp_mac (GBytes      *application_secret,
     if (!EVP_MAC_update (hmac_ctx, g_bytes_get_data (data_b, NULL), g_bytes_get_size (data_b)))
       goto out_error;
 
-  mac = g_malloc0 (SDCP_MAC_SIZE);
-  if (!EVP_MAC_final (hmac_ctx, mac, &mac_len, SDCP_MAC_SIZE))
+  mac = g_malloc0 (FPI_SDCP_MAC_SIZE);
+  if (!EVP_MAC_final (hmac_ctx, mac, &mac_len, FPI_SDCP_MAC_SIZE))
     goto out_error;
 
-  if (mac_len != SDCP_MAC_SIZE)
+  if (mac_len != FPI_SDCP_MAC_SIZE)
     goto out_error;
 
   EVP_MAC_CTX_free (hmac_ctx);
@@ -573,7 +574,7 @@ fpi_sdcp_get_private_key (EVP_PKEY *pkey,
     goto out_error;
 
   priv_len = BN_num_bytes (priv_bn);
-  if (priv_len != SDCP_PRIVATE_KEY_SIZE)
+  if (priv_len != FPI_SDCP_PRIVATE_KEY_SIZE)
     goto out_error;
 
   priv = g_malloc0 (priv_len);
@@ -605,12 +606,12 @@ fpi_sdcp_get_public_key (EVP_PKEY *pkey,
 
   g_assert_nonnull (pkey);
 
-  pub = g_malloc0 (SDCP_PUBLIC_KEY_SIZE);
+  pub = g_malloc0 (FPI_SDCP_PUBLIC_KEY_SIZE);
   if (!EVP_PKEY_get_octet_string_param (pkey, OSSL_PKEY_PARAM_PUB_KEY,
-                                        pub, SDCP_PUBLIC_KEY_SIZE, &pub_len))
+                                        pub, FPI_SDCP_PUBLIC_KEY_SIZE, &pub_len))
     goto out_error;
 
-  if (pub_len != SDCP_PUBLIC_KEY_SIZE)
+  if (pub_len != FPI_SDCP_PUBLIC_KEY_SIZE)
     goto out_error;
 
   res = fpi_sdcp_bytes_new_secure_take (pub, pub_len);
@@ -638,7 +639,7 @@ fpi_sdcp_get_private_pkey (GBytes  *private_key,
   OSSL_PARAM_BLD *param_bld = NULL;
   OSSL_PARAM *params = NULL;
 
-  if (g_bytes_get_size (private_key) != SDCP_PRIVATE_KEY_SIZE)
+  if (g_bytes_get_size (private_key) != FPI_SDCP_PRIVATE_KEY_SIZE)
     goto out_error;
 
   /* import private key as a BIGNUM */
@@ -651,9 +652,9 @@ fpi_sdcp_get_private_pkey (GBytes  *private_key,
   public_key_point = EC_POINT_new (group);
   if (!EC_POINT_mul (group, public_key_point, private_key_bn, NULL, NULL, NULL))
     goto out_error;
-  public_key_buf = g_malloc0 (SDCP_PUBLIC_KEY_SIZE);
+  public_key_buf = g_malloc0 (FPI_SDCP_PUBLIC_KEY_SIZE);
   if (!EC_POINT_point2oct (group, public_key_point, POINT_CONVERSION_UNCOMPRESSED,
-                           public_key_buf, SDCP_PUBLIC_KEY_SIZE, NULL))
+                           public_key_buf, FPI_SDCP_PUBLIC_KEY_SIZE, NULL))
     goto out_error;
   EC_POINT_free (public_key_point);
   EC_GROUP_free (group);
@@ -665,7 +666,7 @@ fpi_sdcp_get_private_pkey (GBytes  *private_key,
                                         SN_X9_62_prime256v1, sizeof (SN_X9_62_prime256v1)))
     goto out_error;
   if (!OSSL_PARAM_BLD_push_octet_string (param_bld, OSSL_PKEY_PARAM_PUB_KEY,
-                                         public_key_buf, SDCP_PUBLIC_KEY_SIZE))
+                                         public_key_buf, FPI_SDCP_PUBLIC_KEY_SIZE))
     goto out_error;
   if (!OSSL_PARAM_BLD_push_BN (param_bld, OSSL_PKEY_PARAM_PRIV_KEY, private_key_bn))
     goto out_error;
@@ -894,9 +895,9 @@ GBytes *
 fpi_sdcp_generate_random (GError **error)
 {
   g_autoptr(GBytes) res = NULL;
-  guint8 *random = g_malloc0 (SDCP_RANDOM_SIZE);
+  guint8 *random = g_malloc0 (FPI_SDCP_RANDOM_SIZE);
 
-  if (!RAND_bytes (random, SDCP_RANDOM_SIZE))
+  if (!RAND_bytes (random, FPI_SDCP_RANDOM_SIZE))
     {
       g_propagate_error (error,
                          fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
@@ -906,7 +907,7 @@ fpi_sdcp_generate_random (GError **error)
       return NULL;
     }
 
-  res = fpi_sdcp_bytes_new_secure_take (random, SDCP_RANDOM_SIZE);
+  res = fpi_sdcp_bytes_new_secure_take (random, FPI_SDCP_RANDOM_SIZE);
 
   return g_steal_pointer (&res);
 }
@@ -951,7 +952,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   master_secret = fpi_sdcp_kdf (key_agreement,
                                 claim->master_secret_label ?
                                 claim->master_secret_label :
-                                SDCP_DEFAULT_LABEL_MASTER_SECRET,
+                                FPI_SDCP_DEFAULT_LABEL_MASTER_SECRET,
                                 host_random, device_random,
                                 SDCP_MASTER_SECRET_SIZE, error);
   if (!master_secret)
@@ -965,7 +966,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   application_keys = fpi_sdcp_kdf (master_secret,
                                    claim->application_keys_label ?
                                    claim->application_keys_label :
-                                   SDCP_DEFAULT_LABEL_APPLICATION_KEYS,
+                                   FPI_SDCP_DEFAULT_LABEL_APPLICATION_KEYS,
                                    NULL, NULL,
                                    SDCP_APPLICATION_KEYS_SIZE, error);
   if (!application_keys)
@@ -975,13 +976,13 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   fp_dbg_hex_dump_gbytes (application_keys);
 
   /* slice first half of application_keys as application_secret */
-  g_assert (g_bytes_get_size (application_keys) >= SDCP_APPLICATION_SECRET_SIZE);
-  app_secret_buf = g_malloc0 (SDCP_APPLICATION_SECRET_SIZE);
+  g_assert (g_bytes_get_size (application_keys) >= FPI_SDCP_APPLICATION_SECRET_SIZE);
+  app_secret_buf = g_malloc0 (FPI_SDCP_APPLICATION_SECRET_SIZE);
   memcpy (app_secret_buf,
           g_bytes_get_data (application_keys, NULL),
-          SDCP_APPLICATION_SECRET_SIZE);
+          FPI_SDCP_APPLICATION_SECRET_SIZE);
 
-  out_app_secret = fpi_sdcp_bytes_new_secure_take (app_secret_buf, SDCP_APPLICATION_SECRET_SIZE);
+  out_app_secret = fpi_sdcp_bytes_new_secure_take (app_secret_buf, FPI_SDCP_APPLICATION_SECRET_SIZE);
 
   fp_dbg ("application_secret:");
   fp_dbg_hex_dump_gbytes (out_app_secret);
@@ -995,7 +996,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   claim_mac = fpi_sdcp_mac (out_app_secret,
                             claim->connect_label ?
                             claim->connect_label :
-                            SDCP_DEFAULT_LABEL_CONNECT,
+                            FPI_SDCP_DEFAULT_LABEL_CONNECT,
                             claim_hash, NULL, error);
   if (!claim_mac)
     goto out_error;
@@ -1152,7 +1153,7 @@ fpi_sdcp_verify_reconnect (GBytes      *application_secret,
   fp_dbg ("SDCP Verify ReconnectResponse");
 
   host_mac = fpi_sdcp_mac (application_secret,
-                           label ? label : SDCP_DEFAULT_LABEL_RECONNECT,
+                           label ? label : FPI_SDCP_DEFAULT_LABEL_RECONNECT,
                            random, NULL, error);
   if (*error)
     return FALSE;
@@ -1193,7 +1194,7 @@ fpi_sdcp_verify_identify (GBytes      *application_secret,
   fp_dbg ("SDCP Verify AuthorizedIdentity");
 
   host_mac = fpi_sdcp_mac (application_secret,
-                           label ? label : SDCP_DEFAULT_LABEL_IDENTIFY,
+                           label ? label : FPI_SDCP_DEFAULT_LABEL_IDENTIFY,
                            nonce, id, error);
   if (*error)
     return FALSE;
@@ -1230,7 +1231,7 @@ fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
   g_autoptr(GBytes) id = NULL;
 
   id = fpi_sdcp_mac (application_secret,
-                     label ? label : SDCP_DEFAULT_LABEL_ENROLL,
+                     label ? label : FPI_SDCP_DEFAULT_LABEL_ENROLL,
                      nonce, NULL, error);
   if (*error)
     return NULL;

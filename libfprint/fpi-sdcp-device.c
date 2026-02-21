@@ -53,13 +53,13 @@ fpi_sdcp_claim_new (void)
 
   res = g_new0 (FpiSdcpClaim, 1);
 
-  res->master_secret_label    = SDCP_DEFAULT_LABEL_MASTER_SECRET;
-  res->application_keys_label = SDCP_DEFAULT_LABEL_APPLICATION_KEYS;
-  res->connect_label          = SDCP_DEFAULT_LABEL_CONNECT;
-  res->reconnect_label        = SDCP_DEFAULT_LABEL_RECONNECT;
-  res->enroll_label           = SDCP_DEFAULT_LABEL_ENROLL;
-  res->identify_label         = SDCP_DEFAULT_LABEL_IDENTIFY;
-  res->sample_label           = SDCP_DEFAULT_LABEL_SAMPLE;
+  res->master_secret_label    = FPI_SDCP_DEFAULT_LABEL_MASTER_SECRET;
+  res->application_keys_label = FPI_SDCP_DEFAULT_LABEL_APPLICATION_KEYS;
+  res->connect_label          = FPI_SDCP_DEFAULT_LABEL_CONNECT;
+  res->reconnect_label        = FPI_SDCP_DEFAULT_LABEL_RECONNECT;
+  res->enroll_label           = FPI_SDCP_DEFAULT_LABEL_ENROLL;
+  res->identify_label         = FPI_SDCP_DEFAULT_LABEL_IDENTIFY;
+  res->sample_label           = FPI_SDCP_DEFAULT_LABEL_SAMPLE;
 
   return res;
 }
@@ -567,13 +567,13 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
   /* Store per-session labels from the claim for post-connect operations */
   priv->reconnect_label = claim->reconnect_label ?
                           claim->reconnect_label :
-                          SDCP_DEFAULT_LABEL_RECONNECT;
+                          FPI_SDCP_DEFAULT_LABEL_RECONNECT;
   priv->identify_label  = claim->identify_label ?
                           claim->identify_label :
-                          SDCP_DEFAULT_LABEL_IDENTIFY;
+                          FPI_SDCP_DEFAULT_LABEL_IDENTIFY;
   priv->enroll_label    = claim->enroll_label ?
                           claim->enroll_label :
-                          SDCP_DEFAULT_LABEL_ENROLL;
+                          FPI_SDCP_DEFAULT_LABEL_ENROLL;
 
   /* Clear no longer needed private data */
   g_clear_pointer (&priv->host_private_key, g_bytes_unref);
@@ -865,8 +865,8 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
     }
 
   /* No error and no valid id/mac provided means that there was no match from the device */
-  if (!id || !mac || g_bytes_get_size (id) != SDCP_ENROLLMENT_ID_SIZE ||
-      g_bytes_get_size (mac) != SDCP_MAC_SIZE)
+  if (!id || !mac || g_bytes_get_size (id) != FPI_SDCP_ENROLLMENT_ID_SIZE ||
+      g_bytes_get_size (mac) != FPI_SDCP_MAC_SIZE)
     {
       g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
       if (action == FPI_DEVICE_ACTION_VERIFY)
