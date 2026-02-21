@@ -218,12 +218,20 @@ out_error:
   return FALSE;
 }
 
-static X509_STORE *truststore = NULL;
+static gboolean
+fpi_sdcp_trust_store_includes_test_certificate (void)
+{
+  if (!fpi_device_emulation_mode_enabled (NULL))
+    return FALSE;
+
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE"), "1") != 0;
+}
 
 static X509_STORE *
-fpi_sdcp_get_truststore (GError **error)
+fpi_sdcp_build_truststore (GError **error)
 {
-  g_autoptr(GResource) truststore_resource = NULL;
+  GResource *truststore_resource = NULL;
+  X509_STORE *truststore = NULL;
   const gchar *truststore_resource_path = "/org/freedesktop/fprint/sdcp/truststore/";
   char **trustcert_names = NULL;
   gchar *trustcert_path = NULL;
@@ -232,9 +240,6 @@ fpi_sdcp_get_truststore (GError **error)
   gsize trustcert_len = 0;
   BIO *bio = NULL;
   X509 *trustcert = NULL;
-
-  if (truststore)
-    return truststore;
 
   truststore = X509_STORE_new ();
   if (!truststore)
@@ -262,14 +267,7 @@ fpi_sdcp_get_truststore (GError **error)
     {
       if (g_str_has_prefix (trustcert_names[i], "SDCP Virtual"))
         {
-          if (!fpi_device_emulation_mode_enabled (NULL))
-            {
-              fp_dbg ("Skipping test-only certificate (not in emulation mode): %s",
-                      trustcert_names[i]);
-              continue;
-            }
-
-          if (g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE"), "1") == 0)
+          if (!fpi_sdcp_trust_store_includes_test_certificate ())
             {
               fp_dbg ("Skipping test-only certificate (test-only): %s",
                       trustcert_names[i]);
@@ -330,6 +328,29 @@ out:
   return NULL;
 }
 
+static X509_STORE *
+fpi_sdcp_get_truststore (GError **error)
+{
+  static X509_STORE *truststore = NULL;
+
+  /* In emulation mode, we want to allow the use of test-only certificates,
+   * so we cannot cache the truststore if it contains test-only certificates.
+   */
+  if (fpi_device_emulation_mode_enabled (NULL) &&
+      !fpi_sdcp_trust_store_includes_test_certificate ())
+    return fpi_sdcp_build_truststore (error);
+
+  if (g_once_init_enter_pointer (&truststore))
+    {
+      g_once_init_leave_pointer (&truststore,
+                                 fpi_sdcp_build_truststore (error));
+      g_return_val_if_fail (truststore != NULL, NULL);
+    }
+
+  X509_STORE_up_ref (truststore);
+  return truststore;
+}
+
 static gboolean
 fpi_sdcp_verify_certificate (X509                          *certificate,
                              FpiDeviceSdcpVerificationFlags verification_flags,
@@ -339,8 +360,7 @@ fpi_sdcp_verify_certificate (X509                          *certificate,
   X509_VERIFY_PARAM *param = NULL;
   X509_STORE_CTX *ctx = NULL;
 
-  sdcp_truststore = fpi_sdcp_get_truststore (error);
-  if (*error)
+  if (!(sdcp_truststore = fpi_sdcp_get_truststore (error)))
     goto out_error;
 
   param = X509_VERIFY_PARAM_new ();
@@ -385,6 +405,7 @@ fpi_sdcp_verify_certificate (X509                          *certificate,
     goto out_verify_error;
 
   X509_STORE_CTX_free (ctx);
+  g_clear_pointer (&sdcp_truststore, X509_STORE_free);
 
   return TRUE;
 
@@ -402,6 +423,7 @@ out_verify_error:
 out:
   g_clear_pointer (&param, X509_VERIFY_PARAM_free);
   g_clear_pointer (&ctx, X509_STORE_CTX_free);
+  g_clear_pointer (&sdcp_truststore, X509_STORE_free);
   return FALSE;
 }
 
