@@ -337,10 +337,9 @@ foreach test_name: unit_tests
 endforeach
 
 # Run udev rule generator with fatal warnings
-envs.set('UDEV_HWDB', udev_hwdb.full_path())
-envs.set('UDEV_HWDB_CHECK_CONTENTS', default_drivers_are_enabled ? '1' : '0')
-
 hwdb_envs = envs
+hwdb_envs.set('UDEV_HWDB', udev_hwdb.full_path())
+hwdb_envs.set('UDEV_HWDB_CHECK_CONTENTS', default_drivers_are_enabled ? '1' : '0')
 hwdb_envs.set('G_MESSAGES_DEBUG', '')
 test('udev-hwdb',
      find_program('test-generated-hwdb.sh'),
