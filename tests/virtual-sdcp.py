@@ -41,6 +41,12 @@ class VirtualSDCPBase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # We still close the device here if it is open, so that we can
+        # catch other issues, given that it must be closed in each test as per
+        # the tearDown definition.
+        if cls.dev is not None and cls.dev.is_open():
+            cls.dev.close_sync()
+
         del cls.dev
         del cls.ctx
 
@@ -50,6 +56,7 @@ class VirtualSDCPBase(unittest.TestCase):
 
     def tearDown(self):
         self.assertFalse(self.dev.is_open())
+
 
 class VirtualSDCPOpenFailures(VirtualSDCPBase):
 
