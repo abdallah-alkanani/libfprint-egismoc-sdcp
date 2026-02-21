@@ -94,17 +94,23 @@ class VirtualSDCP(VirtualSDCPOpenedBase):
         pass
 
     def test_reconnect(self):
+        # FIXME:
         # Ensure device was opened once before, this may be a reconnect if
         # it is the same process as another test.
         self.dev.close_sync()
 
         # Check that a reconnect happens on next open. To know about this, we
         # need to parse check log messages for that.
-        success = [False]
+        reconnected = False
+
         def log_func(domain, level, msg):
-            print("log: '%s', '%s', '%s'" % (str(domain), str(level), msg))
+            nonlocal reconnected
+
+            print(f"log: '{domain}', '{level}', '{msg}'")
+            # FIXME: We should not rely on log messages, but rather setup a socket
+            # for communication between the test and the driver.
             if msg == 'SDCP Reconnect succeeded':
-                success[0] = True
+                reconnected = True
 
             # Call default handler
             GLib.log_default_handler(domain, level, msg)
@@ -112,11 +118,11 @@ class VirtualSDCP(VirtualSDCPOpenedBase):
         handler_id = GLib.log_set_handler('libfprint-sdcp_device', GLib.LogLevelFlags.LEVEL_DEBUG, log_func)
         self.dev.open_sync()
         GLib.log_remove_handler('libfprint-sdcp_device', handler_id)
-        assert success[0]
+        self.assertTrue(reconnected)
 
     def test_list(self):
         prints = self.dev.list_prints_sync()
-        assert len(prints) == 0
+        self.assertEqual(prints, [])
 
     def test_enroll_list_verify(self):
         # Set up a new print
@@ -129,7 +135,7 @@ class VirtualSDCP(VirtualSDCPOpenedBase):
 
         # Get the print list again and ensure there is exactly 1 print
         prints = self.dev.list_prints_sync()
-        self.assertTrue(len(prints) == 1)
+        self.assertEqual(len(prints), 1)
 
         # Ensure the one print from list is the same as new_print
         self.assertTrue(prints[0].equal(new_print))
@@ -149,7 +155,7 @@ class VirtualSDCP(VirtualSDCPOpenedBase):
 
         # Get the print list again and ensure there is exactly 2 prints
         prints = self.dev.list_prints_sync()
-        self.assertTrue(len(prints) == 2)
+        self.assertEqual(len(prints), 2)
 
         # Ensure the second print from list is the same as new_print2
         self.assertTrue(prints[1].equal(new_print2))
@@ -172,27 +178,33 @@ class VirtualSDCPNoReconnect(VirtualSDCPOpenedBase):
 
         # Check that a reconnect happens on next open. To know about this, we
         # need to parse check log messages for that.
-        success = [False]
+        reconnected = False
         def log_func(domain, level, msg):
-            print("log: '%s', '%s', '%s'" % (str(domain), str(level), msg))
+            nonlocal reconnected
+
+            print(f"log: '{domain}', '{level}', '{msg}'")
+            # FIXME: We should not rely on log messages, but rather setup a socket
+            # for communication between the test and the driver.
             if msg == 'SDCP Reconnect succeeded':
-                success[0] = True
+                reconnected = True
 
             # Call default handler
             GLib.log_default_handler(domain, level, msg)
 
-        handler_id = GLib.log_set_handler('libfprint-sdcp_device', GLib.LogLevelFlags.LEVEL_DEBUG, log_func)
+        handler_id = GLib.log_set_handler('libfprint-sdcp_device',
+                                          GLib.LogLevelFlags.LEVEL_DEBUG, log_func)
         self.dev.open_sync()
         GLib.log_remove_handler('libfprint-sdcp_device', handler_id)
 
         # Ensure that we did NOT see "SDCP Reconnect succeeded" in the log
-        assert success[0] == False
+        self.assertFalse(reconnected)
 
 
 if __name__ == '__main__':
     try:
         gi.require_version('FPrint', '2.0')
         from gi.repository import FPrint
+
     except Exception as e:
         print("Missing dependencies: %s" % str(e))
         sys.exit(77)

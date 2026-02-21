@@ -626,11 +626,13 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
                                      priv->reconnect_random,
                                      mac, &error))
         {
+          /* NOTE: This string is checked in tests! */
           fp_dbg ("SDCP Reconnect succeeded");
           fpi_device_open_complete (FP_DEVICE (self), NULL);
         }
       else
         {
+          /* NOTE: This string matters in tests! */
           fp_dbg ("SDCP Reconnect failed; doing a full connect.");
           fpi_sdcp_device_connect (self);
         }
