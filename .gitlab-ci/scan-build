@@ -1,4 +1,7 @@
-#!/bin/sh
+#!/bin/sh -x
 
 # This wrapper just disables the malloc checker
-exec /usr/bin/scan-build --status-bugs -disable-checker unix.Malloc --exclude "_build/meson-private" "$@"
+exec /usr/bin/scan-build --status-bugs -disable-checker unix.Malloc \
+    --exclude "$PWD/_build/meson-private" \
+    --exclude "$PWD/meson-private" \
+    "$@"
