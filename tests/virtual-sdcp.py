@@ -83,6 +83,7 @@ class VirtualSDCPOpenedBase(VirtualSDCPBase):
         self.assertTrue(self.dev.is_open())
 
     def tearDown(self):
+        self.dev.clear_storage_sync()
         self.dev.close_sync()
         super().tearDown()
 

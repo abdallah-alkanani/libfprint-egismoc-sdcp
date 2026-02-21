@@ -203,6 +203,18 @@ dev_list (FpSdcpDevice *sdcp_device)
 }
 
 static void
+dev_clear_storage (FpDevice *device)
+{
+  FpDeviceVirtualSdcp *self = FPI_DEVICE_VIRTUAL_SDCP (device);
+
+  fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
+
+  g_ptr_array_set_size (self->print_ids, 0);
+
+  fpi_device_clear_storage_complete (device, NULL);
+}
+
+static void
 dev_reconnect (FpSdcpDevice *sdcp_device)
 {
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
@@ -306,6 +318,7 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
   dev_class->id_table = driver_ids;
   dev_class->nr_enroll_stages = 1;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
+  dev_class->clear_storage = dev_clear_storage;
 
   sdcp_dev_class->verification_flags =
     FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME;
