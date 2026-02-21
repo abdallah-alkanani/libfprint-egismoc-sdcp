@@ -271,11 +271,32 @@ dev_close (FpDevice *device)
   fpi_device_close_complete (device, NULL);
 }
 
+static inline gboolean
+is_reconnect_supported (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_NO_RECONNECT"), "1") != 0;
+}
+
 static void
 dev_open (FpSdcpDevice *sdcp_device)
 {
+  void (*old_reconnect)(FpSdcpDevice *sdcp_device) = dev_reconnect;
+
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
+
+  if (!is_reconnect_supported ())
+    {
+      fp_dbg ("FP_VIRTUAL_SDCP_NO_RECONNECT is set.");
+
+      /* FIXME: Ideally we should use another sub-device for this  */
+      old_reconnect = g_steal_pointer (
+        &FP_SDCP_DEVICE_GET_CLASS (sdcp_device)->reconnect);
+    }
+
   fpi_sdcp_device_open_complete (sdcp_device, NULL);
+
+  if (!is_reconnect_supported ())
+    FP_SDCP_DEVICE_GET_CLASS (sdcp_device)->reconnect = old_reconnect;
 }
 
 static void
@@ -325,14 +346,14 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
 
   sdcp_dev_class->open = dev_open;
   sdcp_dev_class->connect = dev_connect;
-
-  if (!g_getenv ("FP_VIRTUAL_SDCP_NO_RECONNECT"))
-    sdcp_dev_class->reconnect = dev_reconnect;
-
+  sdcp_dev_class->reconnect = dev_reconnect;
   sdcp_dev_class->list = dev_list;
   sdcp_dev_class->enroll = dev_enroll;
   sdcp_dev_class->enroll_commit = dev_enroll_commit;
   sdcp_dev_class->identify = dev_identify;
+
+  if (!is_reconnect_supported ())
+    sdcp_dev_class->reconnect = NULL;
 
   dev_class->close = dev_close;
 
