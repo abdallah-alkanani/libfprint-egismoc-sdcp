@@ -50,6 +50,12 @@
       <xi:include href="xml/fpi-log.xml"/>
     </chapter>
 
+    <chapter id="driver-data">
+      <title>Binary buffer I/O</title>
+      <xi:include href="xml/fpi-byte-reader.xml"/>
+      <xi:include href="xml/fpi-byte-writer.xml"/>
+    </chapter>
+
     <chapter id="driver-img">
       <title>Image manipulation</title>
       <xi:include href="xml/fpi-image.xml"/>
