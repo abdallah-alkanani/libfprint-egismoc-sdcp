@@ -63,8 +63,14 @@
     </chapter>
 
     <chapter id="driver-print">
-      <title>Print handling</title>
+      <title>Fingerprint handling</title>
       <xi:include href="xml/fpi-print.xml"/>
+    </chapter>
+
+    <chapter id="driver-sdcp">
+      <title>SDCP cryptographic operations</title>
+      <xi:include href="xml/fpi-sdcp.xml"/>
+      <xi:include href="xml/fpi-sdcp-claim.xml"/>
     </chapter>
 
     <chapter id="driver-misc">

@@ -66,9 +66,9 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  *
  * This function will also perform a validation of the ConnectResponse MAC and
  * optionally perform additional verifications based on the provided
- * @validate_certificate and @verify_signatures booleans. If any of these these
- * validations fail then %NULL will be returned, indicating that the SDCP secure
- * connection channel could not be established.
+ * @verification_flags.
+ * If any of these these validations fail then %NULL will be returned,
+ * indicating that the SDCP secure connection channel could not be established.
  *
  * Returns: %TRUE if the @application_secret was successfully derived and the
  * ConnectResponse has been successfully verified

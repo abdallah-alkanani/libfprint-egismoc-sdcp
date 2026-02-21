@@ -345,13 +345,9 @@ fpi_image_device_set_bz3_threshold
 <SECTION>
 <FILE>fpi-sdcp-device</FILE>
 <TITLE>Internal FpSdcpDevice</TITLE>
-FpiSdcpClaim
 FpiDeviceSdcpVerificationFlags
 FpSdcpDeviceClass
-fpi_sdcp_claim_get_type
-fpi_sdcp_claim_new
-fpi_sdcp_claim_copy
-fpi_sdcp_claim_free
+
 fpi_sdcp_device_open_complete
 fpi_sdcp_device_get_connect_data
 fpi_sdcp_device_connect_complete
@@ -387,6 +383,29 @@ FPI_SDCP_DEFAULT_LABEL_RECONNECT
 FPI_SDCP_DEFAULT_LABEL_SAMPLE
 FPI_SDCP_DEFAULT_LABEL_ENROLL
 FPI_SDCP_DEFAULT_LABEL_IDENTIFY
+</SECTION>
+
+<SECTION>
+<FILE>fpi-sdcp-claim</FILE>
+<TITLE>SDCP Claim</TITLE>
+FpiSdcpClaim
+fpi_sdcp_claim_get_type
+fpi_sdcp_claim_new
+fpi_sdcp_claim_copy
+fpi_sdcp_claim_free
+</SECTION>
+
+<SECTION>
+<FILE>fpi-sdcp</FILE>
+<TITLE>SDCP Cryptographic Operations</TITLE>
+fpi_sdcp_generate_host_key
+fpi_sdcp_generate_random
+fpi_sdcp_verify_connect
+fpi_sdcp_verify_reconnect
+fpi_sdcp_verify_identify
+fpi_sdcp_generate_enrollment_id
+fpi_sdcp_mac
+fpi_sdcp_hash_claim
 </SECTION>
 
 <SECTION>
