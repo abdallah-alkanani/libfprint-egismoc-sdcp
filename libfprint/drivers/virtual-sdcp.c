@@ -282,9 +282,6 @@ fpi_device_virtual_sdcp_init (FpDeviceVirtualSdcp *self)
 {
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 
-  /* Force FP_DEVICE_EMULATION=1 when using FpDeviceVirtualSdcp */
-  g_setenv ("FP_DEVICE_EMULATION", "1", TRUE);
-
   self->print_ids = g_ptr_array_new_with_free_func ((GDestroyNotify) g_bytes_unref);
 }
 

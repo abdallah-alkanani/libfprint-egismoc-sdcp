@@ -110,6 +110,9 @@ if get_option('introspection')
 
             if r.returncode() == 0 and unit_tests.length() > 0
                 suite += vdtest
+
+                envs = envs
+                envs.set('FP_TESTS_INDEPENDENT', '1')
             elif r.returncode() == 77
                 test(vdtest,
                     sh,

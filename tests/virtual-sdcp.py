@@ -54,6 +54,9 @@ class VirtualSDCPBase(unittest.TestCase):
 class VirtualSDCPOpenFailures(VirtualSDCPBase):
 
     def test_fails_to_open_if_not_using_device_emulation(self):
+        if not 'FP_TESTS_INDEPENDENT' in os.environ:
+            self.skipTest("This can only run when tests are independent")
+
         del os.environ['FP_DEVICE_EMULATION']
         self.addCleanup(os.environ.setdefault, 'FP_DEVICE_EMULATION', '1')
 

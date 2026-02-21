@@ -262,7 +262,7 @@ fpi_sdcp_get_truststore (GError **error)
     {
       if (g_str_has_prefix (trustcert_names[i], "SDCP Virtual"))
         {
-          if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
+          if (!fpi_device_emulation_mode_enabled (NULL))
             {
               fp_dbg ("Skipping test-only certificate (not in emulation mode): %s",
                       trustcert_names[i]);

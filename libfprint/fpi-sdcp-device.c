@@ -210,7 +210,7 @@ fpi_sdcp_device_connect (FpSdcpDevice *self)
   g_clear_pointer (&priv->host_public_key, g_bytes_unref);
   g_clear_pointer (&priv->host_random, g_bytes_unref);
 
-  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
+  if (!fpi_device_emulation_mode_enabled (FP_DEVICE (self)))
     {
       /* SDCP Connect: 3.i. Generate host ephemeral ECDH key pair */;
       if (!fpi_sdcp_generate_host_key (&priv->host_private_key,
@@ -256,7 +256,7 @@ fpi_sdcp_device_reconnect (FpSdcpDevice *self)
 
   g_clear_pointer (&priv->reconnect_random, g_bytes_unref);
 
-  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
+  if (!fpi_device_emulation_mode_enabled (FP_DEVICE (self)))
     {
       /* SDCP Reconnect: 2.i. Generate host random */
       priv->reconnect_random = fpi_sdcp_generate_random (&error);
@@ -329,7 +329,7 @@ fpi_sdcp_device_identify (FpSdcpDevice *self)
 
   g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
 
-  if (g_strcmp0 (g_getenv ("FP_DEVICE_EMULATION"), "1") != 0)
+  if (!fpi_device_emulation_mode_enabled (FP_DEVICE (self)))
     {
       /* Generate a new nonce. */
       priv->identify_nonce = fpi_sdcp_generate_random (&error);

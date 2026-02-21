@@ -253,6 +253,7 @@ global:
 
 LIBFPRINT_TOD_@tod_soversion@_1.95 {
 global:
+    fpi_device_emulation_mode_enabled;
     fpi_device_sdcp_verification_flags_get_type;
     fpi_sdcp_claim_copy;
     fpi_sdcp_claim_free;
