@@ -57,6 +57,20 @@ class VirtualSDCPBase(unittest.TestCase):
     def tearDown(self):
         self.assertFalse(self.dev.is_open())
 
+    def set_env(self, key, value='1'):
+        os.environ[key] = value
+        self.addCleanup(os.environ.pop, key, None)
+
+    def remove_env(self, key):
+        old = os.environ.pop(key, None)
+        self.assertIsNotNone(old)
+        self.addCleanup(os.environ.__setitem__, key, old)
+
+    def use_untrusted_certificate(self):
+        self.set_env('FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE')
+
+    def disable_device_emulation(self):
+        self.remove_env('FP_DEVICE_EMULATION')
 
 class VirtualSDCPOpenFailures(VirtualSDCPBase):
 
@@ -64,17 +78,14 @@ class VirtualSDCPOpenFailures(VirtualSDCPBase):
         if not 'FP_TESTS_INDEPENDENT' in os.environ:
             self.skipTest("This can only run when tests are independent")
 
-        del os.environ['FP_DEVICE_EMULATION']
-        self.addCleanup(os.environ.setdefault, 'FP_DEVICE_EMULATION', '1')
-
+        self.disable_device_emulation()
         with self.assertRaises(GLib.Error) as error:
             self.dev.open_sync()
         self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
                                                 FPrint.DeviceError.UNTRUSTED))
 
     def test_fails_to_open_if_device_certificate_is_untrusted(self):
-        os.environ['FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE'] = '1'
-        self.addCleanup(os.environ.pop, 'FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE', None)
+        self.use_untrusted_certificate()
 
         with self.assertRaises(GLib.Error) as error:
             self.dev.open_sync()
