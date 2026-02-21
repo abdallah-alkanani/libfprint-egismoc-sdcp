@@ -87,8 +87,9 @@ test_generate_enrollment_id (void)
   fp_dbg ("expected:");
   fp_dbg_hex_dump_gbytes (expected_id);
 
-  g_assert (g_bytes_equal (expected_id, id));
-  g_assert_null (error);
+  g_assert_cmpmem (g_bytes_get_data (expected_id, NULL), g_bytes_get_size (expected_id),
+                   g_bytes_get_data (id, NULL), g_bytes_get_size (id));
+  g_assert_no_error (error);
 }
 
 static void
@@ -101,7 +102,7 @@ test_verify_identify (void)
   g_autoptr(GBytes) mac = g_bytes_from_hex (identify_mac_hex);
 
   g_assert_true (fpi_sdcp_verify_identify (application_secret, NULL, nonce, id, mac, &error));
-  g_assert_null (error);
+  g_assert_no_error (error);
 }
 
 static void
@@ -113,7 +114,7 @@ test_verify_reconnect (void)
   g_autoptr(GBytes) mac = g_bytes_from_hex (reconnect_mac_hex);
 
   g_assert_true (fpi_sdcp_verify_reconnect (application_secret, NULL, random, mac, &error));
-  g_assert_null (error);
+  g_assert_no_error (error);
 }
 
 static void
@@ -139,8 +140,8 @@ test_verify_connect (void)
                                           &application_secret,
                                           &error));
 
-  g_assert_null (error);
-  g_assert (g_bytes_get_size (application_secret) == FPI_SDCP_APPLICATION_SECRET_SIZE);
+  g_assert_no_error (error);
+  g_assert_cmpuint (g_bytes_get_size (application_secret), ==, FPI_SDCP_APPLICATION_SECRET_SIZE);
 
   fp_dbg ("application_secret:");
   fp_dbg_hex_dump_gbytes (application_secret);
@@ -148,7 +149,8 @@ test_verify_connect (void)
   fp_dbg ("expected:");
   fp_dbg_hex_dump_gbytes (expected_application_secret);
 
-  g_assert_true (g_bytes_equal (expected_application_secret, application_secret));
+  g_assert_cmpmem (g_bytes_get_data (expected_application_secret, NULL), g_bytes_get_size (expected_application_secret),
+                   g_bytes_get_data (application_secret, NULL), g_bytes_get_size (application_secret));
 
   fpi_sdcp_claim_free (claim);
 }
@@ -161,8 +163,9 @@ test_generate_random (void)
 
   random = fpi_sdcp_generate_random (&error);
 
-  g_assert_null (error);
-  g_assert (g_bytes_get_size (random) == FPI_SDCP_RANDOM_SIZE);
+  g_assert_no_error (error);
+  g_assert_nonnull (random);
+  g_assert_cmpuint (g_bytes_get_size (random), ==, FPI_SDCP_RANDOM_SIZE);
 
   fp_dbg ("random:");
   fp_dbg_hex_dump_gbytes (random);
@@ -174,20 +177,18 @@ test_generate_host_key (void)
   g_autoptr(GBytes) private_key = NULL;
   g_autoptr(GBytes) public_key = NULL;
   g_autoptr(GError) error = NULL;
-  gsize len = 0;
 
   fpi_sdcp_generate_host_key (&private_key, &public_key, &error);
 
-  g_assert_null (error);
-
-  g_bytes_get_data (private_key, &len);
-  g_assert (len == 32);
+  g_assert_no_error (error);
+  g_assert_nonnull (private_key);
+  g_assert_cmpuint (g_bytes_get_size (private_key), ==, FPI_SDCP_PRIVATE_KEY_SIZE);
 
   fp_dbg ("private_key:");
   fp_dbg_hex_dump_gbytes (private_key);
 
-  g_bytes_get_data (public_key, &len);
-  g_assert (len == FPI_SDCP_PUBLIC_KEY_SIZE);
+  g_assert_nonnull (public_key);
+  g_assert_cmpuint (g_bytes_get_size (public_key), ==, FPI_SDCP_PUBLIC_KEY_SIZE);
 
   fp_dbg ("public_key:");
   fp_dbg_hex_dump_gbytes (public_key);
