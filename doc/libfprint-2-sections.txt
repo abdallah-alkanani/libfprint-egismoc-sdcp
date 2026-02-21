@@ -225,6 +225,7 @@ fpi_image_device_set_bz3_threshold
 <FILE>fpi-sdcp-device</FILE>
 <TITLE>Internal FpSdcpDevice</TITLE>
 FpiSdcpClaim
+FpiDeviceSdcpVerificationFlags
 FpSdcpDeviceClass
 fpi_sdcp_claim_get_type
 fpi_sdcp_claim_new
