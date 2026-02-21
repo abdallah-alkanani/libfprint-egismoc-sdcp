@@ -231,6 +231,7 @@ fpi_sdcp_trust_store_includes_test_certificate (void)
 static X509_STORE *
 fpi_sdcp_build_truststore (GError **error)
 {
+  g_autoptr(GError) local_error = NULL;
   GResource *truststore_resource = NULL;
   X509_STORE *truststore = NULL;
   const gchar *truststore_resource_path = "/org/freedesktop/fprint/sdcp/truststore/";
@@ -254,13 +255,14 @@ fpi_sdcp_build_truststore (GError **error)
   fpi_sdcp_truststore_register_resource ();
   truststore_resource = fpi_sdcp_truststore_get_resource ();
   trustcert_names = g_resources_enumerate_children (truststore_resource_path,
-                                                    G_RESOURCE_LOOKUP_FLAGS_NONE, error);
-  if (*error)
+                                                    G_RESOURCE_LOOKUP_FLAGS_NONE,
+                                                    &local_error);
+  if (!trustcert_names)
     {
       g_propagate_error (error,
                          fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                    "Error loading SDCP truststore certificates: %s",
-                                                   (*error)->message));
+                                                   local_error->message));
       goto out;
     }
 
@@ -278,14 +280,17 @@ fpi_sdcp_build_truststore (GError **error)
 
       fp_dbg ("Adding certificate to SDCP truststore: %s", trustcert_names[i]);
       trustcert_path = g_strconcat (truststore_resource_path, trustcert_names[i], NULL);
-      trustcert_gb = g_resource_lookup_data (truststore_resource, trustcert_path, 0, error);
-      if (*error)
+      trustcert_gb = g_resource_lookup_data (truststore_resource,
+                                             trustcert_path, 0,
+                                             &local_error);
+      if (!trustcert_gb)
         {
           g_propagate_error (error,
                              fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                        "Error loading SDCP truststore "
                                                        "certificate '%s': %s",
-                                                       trustcert_names[i], (*error)->message));
+                                                       trustcert_names[i],
+                                                       local_error->message));
           goto out;
         }
       g_free (trustcert_path);
@@ -809,11 +814,11 @@ fpi_sdcp_key_agreement (GBytes  *host_private_key,
   gsize key_agreement_len = 0;
 
   host_pkey = fpi_sdcp_get_private_pkey (host_private_key, error);
-  if (*error)
+  if (!host_pkey)
     goto out;
 
   device_pkey = fpi_sdcp_get_public_pkey (firmware_public_key, error);
-  if (*error)
+  if (!device_pkey)
     goto out;
 
   ctx = EVP_PKEY_CTX_new_from_pkey (NULL, host_pkey, NULL);
@@ -863,17 +868,25 @@ fpi_sdcp_generate_host_key (GBytes **private_key,
                             GBytes **public_key,
                             GError **error)
 {
+  g_autoptr(GBytes) local_private_key = NULL;
+  g_autoptr(GBytes) local_public_key = NULL;
   EVP_PKEY *key = EVP_EC_gen ("P-256");
 
-  *private_key = fpi_sdcp_get_private_key (key, error);
-  if (*error)
+  g_assert (private_key != NULL);
+  g_assert (public_key != NULL);
+
+  local_private_key = fpi_sdcp_get_private_key (key, error);
+  if (!local_private_key)
     goto out;
 
-  *public_key = fpi_sdcp_get_public_key (key, error);
-  if (*error)
+  local_public_key = fpi_sdcp_get_public_key (key, error);
+  if (!local_public_key)
     goto out;
 
   EVP_PKEY_free (key);
+
+  *private_key = g_steal_pointer (&local_private_key);
+  *public_key = g_steal_pointer (&local_public_key);
 
   return TRUE;
 
@@ -1092,7 +1105,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
           fp_dbg_hex_dump_gbytes (claim->device_signature);
 
           device_public_pkey = fpi_sdcp_get_public_pkey (claim->device_public_key, error);
-          if (*error)
+          if (!device_public_pkey)
             goto out_error;
 
           if (!fpi_sdcp_verify_signature (device_public_pkey,
@@ -1147,7 +1160,7 @@ fpi_sdcp_verify_reconnect (GBytes      *application_secret,
   host_mac = fpi_sdcp_mac (application_secret,
                            label ? label : FPI_SDCP_DEFAULT_LABEL_RECONNECT,
                            random, NULL, error);
-  if (*error)
+  if (!host_mac)
     return FALSE;
 
   fp_dbg ("Device MAC:");
@@ -1188,7 +1201,7 @@ fpi_sdcp_verify_identify (GBytes      *application_secret,
   host_mac = fpi_sdcp_mac (application_secret,
                            label ? label : FPI_SDCP_DEFAULT_LABEL_IDENTIFY,
                            nonce, id, error);
-  if (*error)
+  if (!host_mac)
     return FALSE;
 
   fp_dbg ("Device MAC:");
@@ -1225,7 +1238,7 @@ fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
   id = fpi_sdcp_mac (application_secret,
                      label ? label : FPI_SDCP_DEFAULT_LABEL_ENROLL,
                      nonce, NULL, error);
-  if (*error)
+  if (!id)
     return NULL;
 
   fp_dbg ("Generated SDCP Enrollment ID:");
