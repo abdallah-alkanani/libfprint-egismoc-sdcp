@@ -287,9 +287,12 @@ pages:
   needs:
     - job: test
       artifacts: true
+    - job: build
+      artifacts: true
   script:
     - mkdir public
     - mv _build/meson-logs/coveragereport public/coverage
+    - mv _build/doc/html public/doc
   artifacts:
     paths:
       - public
