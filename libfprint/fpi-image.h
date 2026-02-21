@@ -29,6 +29,7 @@
  * @FPI_IMAGE_V_FLIPPED: the image is vertically flipped
  * @FPI_IMAGE_H_FLIPPED: the image is horizontally flipped
  * @FPI_IMAGE_COLORS_INVERTED: the colours are inverted
+ * @FPI_IMAGE_PARTIAL: the image is a partial scan
  *
  * Flags used in an #FpImage structure to describe the contained image.
  * This is useful for image drivers as they can simply set these flags and

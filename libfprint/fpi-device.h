@@ -39,6 +39,13 @@ typedef enum {
 
 /**
  * FpIdEntry:
+ * @pid: The USB product ID (for USB devices)
+ * @vid: The USB vendor ID (for USB devices)
+ * @virtual_envvar: Environment variable name (for virtual devices)
+ * @driver_data: Optional driver-specific data, defaults to 0
+ * @udev_types: Subtypes for udev-based devices
+ * @spi_acpi_id: ACPI ID (for SPI devices)
+ * @hid_id: HID device identifier (for HID devices)
  *
  * An entry in the table of supported hardware. For USB devices, the product ID
  * and vendor ID should be provided. The optional @driver_data field defaults

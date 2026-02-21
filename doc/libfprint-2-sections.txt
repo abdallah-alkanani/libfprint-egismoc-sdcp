@@ -75,6 +75,7 @@ fp_device_clear_storage_sync
 fp_device_suspend_sync
 fp_device_resume_sync
 FpDevice
+FpTemperature
 </SECTION>
 
 <SECTION>

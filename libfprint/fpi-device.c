@@ -81,6 +81,7 @@ gboolean
 
 /**
  * fpi_device_class_auto_initialize_features:
+ * @device_class: An #FpDeviceClass to initialize
  *
  * Initializes the #FpDeviceClass @features flags checking what device vfuncs
  * are implemented.
@@ -1828,7 +1829,7 @@ fpi_device_suspend_completed (FpDevice *device)
  * current action will be cancelled before the error is forwarded to the
  * application.
  *
- * It is recommended to set @error to #FP_ERROR_NOT_IMPLEMENTED.
+ * It is recommended to set @error to #FP_DEVICE_ERROR_NOT_SUPPORTED.
  */
 void
 fpi_device_suspend_complete (FpDevice *device,
