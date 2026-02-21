@@ -48,6 +48,7 @@
 
 /**
  * FpiDeviceSdcpVerificationFlags:
+ * @FPI_DEVICE_SDCP_VERIFICATION_DEFAULT: No flags. Perform all verifications.
  * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES: Skip validating the
  *   device's #FpiSdcpClaim.model_certificate against the SDCP truststore.
  *   SDCP truststore.
@@ -68,6 +69,7 @@
  * Bitfield of SDCP verification flags for a device.
  */
 typedef enum {
+  FPI_DEVICE_SDCP_VERIFICATION_DEFAULT = 0,
   FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES = 1 << 0,
   FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES = 1 << 1,
 
