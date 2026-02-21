@@ -78,11 +78,11 @@ g_bytes_from_hex (const gchar *hex)
 }
 
 static FpiSdcpClaim *
-get_fake_sdcp_claim (void)
+get_fake_sdcp_claim (const gchar *certificate_hex)
 {
   FpiSdcpClaim *claim = g_new0 (FpiSdcpClaim, 1);
 
-  claim->model_certificate = g_bytes_from_hex (model_certificate_hex);
+  claim->model_certificate = g_bytes_from_hex (certificate_hex);
   claim->device_public_key = g_bytes_from_hex (device_public_key_hex);
   claim->firmware_public_key = g_bytes_from_hex (firmware_public_key_hex);
   claim->firmware_hash = g_bytes_from_hex (firmware_hash_hex);
@@ -242,16 +242,33 @@ dev_reconnect (FpSdcpDevice *sdcp_device)
   fpi_sdcp_device_reconnect_complete (sdcp_device, reconnect_mac, error);
 }
 
+static inline gboolean
+use_expired_certificate (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_EXPIRED_CERTIFICATE"), "1") == 0;
+}
+
+static inline gboolean
+allow_expired_certificate (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_ALLOW_EXPIRED_CERTIFICATE"), "1") == 0;
+}
+
 static void
 dev_connect (FpSdcpDevice *sdcp_device)
 {
-  fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
+  FpSdcpDeviceClass *sdcp_cls = FP_SDCP_DEVICE_GET_CLASS (sdcp_device);
+  FpiDeviceSdcpVerificationFlags old_flags;
+
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) host_random = NULL;
   g_autoptr(GBytes) host_public_key = NULL;
-  g_autoptr(GBytes) device_random = g_bytes_from_hex (device_random_hex);
-  g_autoptr(GBytes) connect_mac = g_bytes_from_hex (connect_mac_hex);
-  g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
+  g_autoptr(GBytes) device_random = NULL;
+  g_autoptr(GBytes) connect_mac = NULL;
+  g_autoptr(FpiSdcpClaim) claim = NULL;
+  const gchar *model_certificate;
+
+  fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 
   fpi_sdcp_device_get_connect_data (sdcp_device, &host_random, &host_public_key);
 
@@ -261,7 +278,28 @@ dev_connect (FpSdcpDevice *sdcp_device)
   g_assert (host_public_key);
   g_assert (g_bytes_get_size (host_public_key) == FPI_SDCP_PUBLIC_KEY_SIZE);
 
+  device_random = g_bytes_from_hex (device_random_hex);
+  model_certificate = model_certificate_hex;
+
+  if (use_expired_certificate ())
+    {
+      model_certificate = expired_model_certificate_hex;
+      connect_mac = g_bytes_from_hex (expired_connect_mac_hex);
+    }
+  else
+    {
+      connect_mac = g_bytes_from_hex (connect_mac_hex);
+    }
+
+  old_flags = sdcp_cls->verification_flags;
+  claim = get_fake_sdcp_claim (model_certificate);
+
+  if (use_expired_certificate () && allow_expired_certificate ())
+    sdcp_cls->verification_flags |=
+      FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME;
+
   fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, connect_mac, error);
+  sdcp_cls->verification_flags = old_flags;
 }
 
 static void
@@ -341,8 +379,7 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->clear_storage = dev_clear_storage;
 
-  sdcp_dev_class->verification_flags =
-    FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME;
+  sdcp_dev_class->verification_flags = FPI_DEVICE_SDCP_VERIFICATION_DEFAULT;
 
   sdcp_dev_class->open = dev_open;
   sdcp_dev_class->connect = dev_connect;

@@ -46,6 +46,19 @@ static const gchar model_certificate_hex[]   = "308201873082012da003020102020102
                                                "020348003045022014f13002c4eb62bf33301223a61fd9bbc68ea9e77dd4d029"
                                                "5595a5587c684bfc022100a8c6dc9db08332bf434c651e70087b50775914abce"
                                                "c93799eb944a5e32f4fe8c";
+static const gchar expired_model_certificate_hex[] = "3082018d30820133a003020102020103300a06082a8648ce3d04030230243122"
+                                                     "302006035504030c1953444350205669727475616c205465737420526f6f7420"
+                                                     "4341301e170d3230303130313030303030305a170d3231303130313030303030"
+                                                     "305a302a3128302606035504030c1f53444350205669727475616c2054657374"
+                                                     "204d6f64656c20457870697265643059301306072a8648ce3d020106082a8648"
+                                                     "ce3d03010703420004c5eb2c24de08a4dd9cfd42c5bc5610277d492111f151bf"
+                                                     "33ad71ad9525401d00d9320976c3c83980fab279d04d1fc9f4196da4d68a2f3b"
+                                                     "6891189af231bf5088a350304e300c0603551d130101ff04023000301d060355"
+                                                     "1d0e041604149244cf70371e7e61c71a80d7066d20427162c1d3301f0603551d"
+                                                     "230418301680146ed6652bb4f2fb15f2adfa6388b7317b38b37b26300a06082a"
+                                                     "8648ce3d040302034800304502205ca95b6be59eb975b8aaf3278d725eb804ca"
+                                                     "5d040c5f3cf9daa8090c4c2efaf6022100fefbe3fbbfe9cf280e7209ade444d8"
+                                                     "19d98779ff702e5447080545b529af09de";
 static const gchar device_public_key_hex[]   = "04e2787890a684f95b96b9a2316ca8d3d33d4d79ff4c89dc6f9e888e973990d1"
                                                "d3154133dcc8bd33b99af9dbf0673390d404d092498a3f214cd93f9b9f28fb5f"
                                                "66";
@@ -58,6 +71,7 @@ static const gchar model_signature_hex[]     = "febe6ba3107813e185f05189e69ae79d
 static const gchar device_signature_hex[]    = "10cc57dd8dafb463510a7327a5fca49b698e999b36448e2023eaf0dff0b0d4a3"
                                                "4f1caf4e872b77364a0a00d7476554d0324c4cc931937e232a0315837d696c06";
 static const gchar connect_mac_hex[]         = "587099769025b54ddbae2a7a2d9166b930929e6f0515433cf2e126f71e024cd4";
+static const gchar expired_connect_mac_hex[] = "c205c6820701e8656c2c5dad9707b62bb6489368239281180e3bcb8cedc82592";
 
 /* expected application_secret based on above */
 

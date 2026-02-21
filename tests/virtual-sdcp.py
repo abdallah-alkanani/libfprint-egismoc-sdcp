@@ -66,11 +66,31 @@ class VirtualSDCPBase(unittest.TestCase):
         self.assertIsNotNone(old)
         self.addCleanup(os.environ.__setitem__, key, old)
 
+    def use_expired_certificate(self):
+        self.set_env('FP_VIRTUAL_SDCP_EXPIRED_CERTIFICATE')
+
+    def allow_expired_certificate(self):
+        self.set_env('FP_VIRTUAL_SDCP_ALLOW_EXPIRED_CERTIFICATE')
+
     def use_untrusted_certificate(self):
         self.set_env('FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE')
 
     def disable_device_emulation(self):
         self.remove_env('FP_DEVICE_EMULATION')
+
+
+class VirtualSDCPOpen(VirtualSDCPBase):
+    def tearDown(self):
+        if self.dev.is_open():
+            self.dev.close_sync()
+        super().tearDown()
+
+    def test_connect_succeeds_with_allowed_expired_certificate(self):
+        self.use_expired_certificate()
+        self.allow_expired_certificate()
+
+        self.dev.open_sync()
+
 
 class VirtualSDCPOpenFailures(VirtualSDCPBase):
 
@@ -92,6 +112,13 @@ class VirtualSDCPOpenFailures(VirtualSDCPBase):
         self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
                                                 FPrint.DeviceError.UNTRUSTED))
 
+    def test_fails_to_open_if_device_certificate_is_expired(self):
+        self.use_expired_certificate()
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
 
 class VirtualSDCPOpenedBase(VirtualSDCPBase):
 

@@ -135,6 +135,31 @@ model_cert = (
 der = model_cert.public_bytes(serialization.Encoding.DER)
 
 # ---------------------------------------------------------------------------
+# Build expired model certificate (same root and model keys, past validity)
+# ---------------------------------------------------------------------------
+
+EXPIRED_MODEL_CN   = "SDCP Virtual Test Model Expired"
+expired_model_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, EXPIRED_MODEL_CN)])
+
+expired_model_cert = (
+    x509.CertificateBuilder()
+    .subject_name(expired_model_name)
+    .issuer_name(root_ca_name)
+    .public_key(model_pub)
+    .serial_number(3)
+    .not_valid_before(datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc))
+    .not_valid_after(datetime.datetime(2021, 1, 1, tzinfo=datetime.timezone.utc))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .add_extension(x509.SubjectKeyIdentifier.from_public_key(model_pub), critical=False)
+    .add_extension(
+        x509.AuthorityKeyIdentifier.from_issuer_public_key(root_pub), critical=False
+    )
+    .sign(root_priv, hashes.SHA256())
+)
+
+expired_der = expired_model_cert.public_bytes(serialization.Encoding.DER)
+
+# ---------------------------------------------------------------------------
 # Print C string literal for virtual-sdcp.h
 # ---------------------------------------------------------------------------
 
@@ -145,6 +170,15 @@ c_value = ("\n" + padding).join(chunks)
 
 print("/* Paste into virtual-sdcp.h as model_certificate_hex: */")
 print(f"static const gchar model_certificate_hex[]   = {c_value};")
+print()
+
+expired_hex_str = expired_der.hex()
+expired_padding = " " * 52
+expired_chunks  = [f'"{expired_hex_str[i:i+64]}"' for i in range(0, len(expired_hex_str), 64)]
+expired_c_value = ("\n" + expired_padding).join(expired_chunks)
+
+print("/* Paste into virtual-sdcp.h as expired_model_certificate_hex: */")
+print(f"static const gchar expired_model_certificate_hex[] = {expired_c_value};")
 print()
 
 # ---------------------------------------------------------------------------
