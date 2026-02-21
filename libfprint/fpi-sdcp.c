@@ -358,15 +358,15 @@ fpi_sdcp_verify_certificate (X509                          *certificate,
                              GError                       **error)
 {
   X509_STORE *sdcp_truststore = NULL;
-  X509_VERIFY_PARAM *param = NULL;
   X509_STORE_CTX *ctx = NULL;
 
   if (!(sdcp_truststore = fpi_sdcp_get_truststore (error)))
     goto out_error;
 
-  param = X509_VERIFY_PARAM_new ();
-  if (!param)
-    goto out_error;
+  ctx = X509_STORE_CTX_new ();
+
+  if (!X509_STORE_CTX_init (ctx, sdcp_truststore, certificate, NULL))
+    goto out_verify_error;
 
   if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME)
     {
@@ -374,33 +374,26 @@ fpi_sdcp_verify_certificate (X509                          *certificate,
        * Most model certificates expire after one year and are not renewed via a
        * vendor firmware update, so we should ignore the validity time check.
        */
-      if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_NO_CHECK_TIME))
+      if (!X509_VERIFY_PARAM_set_flags (X509_STORE_CTX_get0_param (ctx),
+                                        X509_V_FLAG_NO_CHECK_TIME))
         goto out_error;
     }
 
   if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT)
     {
       /* Do not allow broken certificates */
-      if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_X509_STRICT))
+      if (!X509_VERIFY_PARAM_set_flags (X509_STORE_CTX_get0_param (ctx),
+                                        X509_V_FLAG_X509_STRICT))
         goto out_error;
     }
 
   if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN)
     {
       /* Skip verification of the full certificate chain. */
-      if (!X509_VERIFY_PARAM_set_flags (param, X509_V_FLAG_PARTIAL_CHAIN))
+      if (!X509_VERIFY_PARAM_set_flags (X509_STORE_CTX_get0_param (ctx),
+                                        X509_V_FLAG_PARTIAL_CHAIN))
         goto out_error;
     }
-
-  if (!X509_STORE_set1_param (sdcp_truststore, param))
-    goto out_error;
-
-  g_clear_pointer (&param, X509_VERIFY_PARAM_free);
-
-  ctx = X509_STORE_CTX_new ();
-
-  if(!X509_STORE_CTX_init (ctx, sdcp_truststore, certificate, NULL))
-    goto out_verify_error;
 
   if (!X509_verify_cert (ctx))
     goto out_verify_error;
@@ -422,7 +415,6 @@ out_verify_error:
                                                "OpenSSL error verifying model certificate: %s",
                                                X509_verify_cert_error_string (X509_STORE_CTX_get_error (ctx))));
 out:
-  g_clear_pointer (&param, X509_VERIFY_PARAM_free);
   g_clear_pointer (&ctx, X509_STORE_CTX_free);
   g_clear_pointer (&sdcp_truststore, X509_STORE_free);
   return FALSE;
