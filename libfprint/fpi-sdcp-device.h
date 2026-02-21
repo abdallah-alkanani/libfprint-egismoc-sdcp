@@ -52,12 +52,11 @@
  *   device's #FpiSdcpClaim.model_certificate against the SDCP truststore.
  *   SDCP truststore.
  *   It determines if the model certificate (cert_m) should be parsed and
- *   its trust chain validated as issued from Microsoft's well-known issuers
+ *   its trust chain validated as issued from Microsoft's well-known issuers.
  * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES: Skip validating the
  *   #FpiSdcpClaim.model_signature and #FpiSdcpClaim.device_signature.
  *   It determines if the model signature (s_m) and device signature (s_d)
  *   should be validated against the certificate and keys provided in the claim.
- *
  * @FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME: Skip validating the
  *   certificate's validity period.
  * @FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT: Use a less strict
@@ -109,7 +108,9 @@ typedef enum {
  * Note all of these may simply be memory views into a larger #GBytes created
  * using g_bytes_new_from_bytes().
  */
-typedef struct _FpiSdcpClaim
+typedef struct _FpiSdcpClaim FpiSdcpClaim;
+
+struct _FpiSdcpClaim
 {
   /*< public >*/
   const char *master_secret_label;
@@ -130,7 +131,7 @@ typedef struct _FpiSdcpClaim
   /*< private >*/
   /* padding for future expansion */
   TOD_PADDING_ALIGNED (16, 0);
-} FpiSdcpClaim;
+};
 
 GType          fpi_sdcp_claim_get_type (void) G_GNUC_CONST;
 
