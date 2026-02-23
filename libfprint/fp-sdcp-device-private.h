@@ -36,8 +36,7 @@ typedef struct
   const gchar *identify_label;
 } FpSdcpDevicePrivate;
 
-void fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,
-                                             GBytes      **application_secret);
+GBytes * fpi_sdcp_device_get_application_secret (FpSdcpDevice *self);
 void fpi_sdcp_device_set_application_secret (FpSdcpDevice *self,
                                              GBytes       *application_secret);
 

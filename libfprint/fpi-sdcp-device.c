@@ -163,20 +163,17 @@ static const gchar test_identify_nonce[] = {
 
 /* Internal functions of FpSdcpDevice */
 
-void
-fpi_sdcp_device_get_application_secret (FpSdcpDevice *self,
-                                        GBytes      **application_secret)
+GBytes *
+fpi_sdcp_device_get_application_secret (FpSdcpDevice *self)
 {
   GBytes *data = NULL;
-
-  g_return_if_fail (*application_secret == NULL);
 
   g_object_get (G_OBJECT (self), "sdcp-data", &data, NULL);
 
   if (!data)
-    return;
+    return NULL;
 
-  *application_secret = g_steal_pointer (&data);
+  return g_steal_pointer (&data);
 }
 
 void
@@ -300,7 +297,7 @@ fpi_sdcp_device_enroll (FpSdcpDevice *self)
 
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
-  fpi_sdcp_device_get_application_secret (self, &application_secret);
+  application_secret = fpi_sdcp_device_get_application_secret (self);
   g_return_if_fail (application_secret != NULL);
 
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
@@ -324,7 +321,7 @@ fpi_sdcp_device_identify (FpSdcpDevice *self)
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   action = fpi_device_get_current_action (FP_DEVICE (self));
   g_return_if_fail (action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_VERIFY);
-  fpi_sdcp_device_get_application_secret (self, &application_secret);
+  application_secret = fpi_sdcp_device_get_application_secret (self);
   g_return_if_fail (application_secret != NULL);
 
   g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
@@ -367,26 +364,26 @@ fpi_sdcp_device_open_complete (FpSdcpDevice *self,
 
   g_autoptr(GBytes) application_secret = NULL;
 
-  if (!error)
-    {
-      fpi_sdcp_device_get_application_secret (self, &application_secret);
-
-      /* Try a reconnect if implemented and we already have an application_secret */
-      if (cls->reconnect && application_secret)
-        fpi_sdcp_device_reconnect (self);
-
-      /* Connect if we don't already have an application_secret */
-      else if (!application_secret)
-        fpi_sdcp_device_connect (self);
-
-      /* Complete open if we are already connected */
-      else
-        fpi_device_open_complete (FP_DEVICE (self), NULL);
-    }
-  else
+  if (error)
     {
       fpi_device_open_complete (FP_DEVICE (self), error);
+      return;
     }
+
+
+  application_secret = fpi_sdcp_device_get_application_secret (self);
+
+  /* Try a reconnect if implemented and we already have an application_secret */
+  if (cls->reconnect && application_secret)
+    fpi_sdcp_device_reconnect (self);
+
+  /* Connect if we don't already have an application_secret */
+  else if (!application_secret)
+    fpi_sdcp_device_connect (self);
+
+  /* Complete open if we are already connected */
+  else
+    fpi_device_open_complete (FP_DEVICE (self), error);
 }
 
 /**
@@ -598,7 +595,6 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
 {
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
-  g_autoptr(GBytes) application_secret = NULL;
   FpiDeviceAction action;
 
   action = fpi_device_get_current_action (FP_DEVICE (self));
@@ -619,7 +615,9 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
     }
   else if (mac)
     {
-      fpi_sdcp_device_get_application_secret (self, &application_secret);
+      g_autoptr(GBytes) application_secret = NULL;
+
+      application_secret = fpi_sdcp_device_get_application_secret (self);
 
       if (fpi_sdcp_verify_reconnect (application_secret,
                                      priv->reconnect_label,
@@ -738,7 +736,7 @@ fpi_sdcp_device_enroll_commit (FpSdcpDevice *self,
   g_return_if_fail (nonce != NULL);
 
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
-  fpi_sdcp_device_get_application_secret (self, &application_secret);
+  application_secret = fpi_sdcp_device_get_application_secret (self);
 
   id = fpi_sdcp_generate_enrollment_id (application_secret, priv->enroll_label, nonce, &error);
   if (!id || error)
@@ -882,7 +880,7 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
       return;
     }
 
-  fpi_sdcp_device_get_application_secret (self, &application_secret);
+  application_secret = fpi_sdcp_device_get_application_secret (self);
 
   if (!fpi_sdcp_verify_identify (application_secret,
                                  priv->identify_label,
