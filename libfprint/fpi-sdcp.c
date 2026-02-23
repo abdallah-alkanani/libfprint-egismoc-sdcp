@@ -232,12 +232,10 @@ static X509_STORE *
 fpi_sdcp_build_truststore (GError **error)
 {
   g_autoptr(GError) local_error = NULL;
-  GResource *truststore_resource = NULL;
+  g_autoptr(GResource) truststore_resource = NULL;
+  g_auto(GStrv) trustcert_names = NULL;
   X509_STORE *truststore = NULL;
   const gchar *truststore_resource_path = "/org/freedesktop/fprint/sdcp/truststore/";
-  char **trustcert_names = NULL;
-  gchar *trustcert_path = NULL;
-  GBytes *trustcert_gb = NULL;
   const gchar *trustcert_ptr;
   gsize trustcert_len = 0;
   BIO *bio = NULL;
@@ -268,6 +266,9 @@ fpi_sdcp_build_truststore (GError **error)
 
   for (int i = 0; trustcert_names[i]; i++)
     {
+      g_autoptr(GBytes) trustcert_gb = NULL;
+      g_autofree gchar *trustcert_path = NULL;
+
       if (g_str_has_prefix (trustcert_names[i], "SDCP Virtual"))
         {
           if (!fpi_sdcp_trust_store_includes_test_certificate ())
@@ -293,10 +294,8 @@ fpi_sdcp_build_truststore (GError **error)
                                                        local_error->message));
           goto out;
         }
-      g_free (trustcert_path);
 
       trustcert_ptr = g_bytes_get_data (trustcert_gb, &trustcert_len);
-      //fp_dbg ("%s:\n%s", trustcert_names[i], trustcert_ptr);
 
       bio = BIO_new (BIO_s_mem ());
       if (BIO_write (bio, trustcert_ptr, trustcert_len) != trustcert_len)
@@ -307,7 +306,7 @@ fpi_sdcp_build_truststore (GError **error)
                                                        trustcert_names[i]));
           goto out;
         }
-      g_bytes_unref (trustcert_gb);
+
       trustcert = PEM_read_bio_X509 (bio, NULL, NULL, NULL);
       //print_certificate (trustcert);
       if (!X509_STORE_add_cert (truststore, trustcert))
@@ -322,14 +321,11 @@ fpi_sdcp_build_truststore (GError **error)
       X509_free (trustcert);
     }
 
-  g_strfreev (trustcert_names);
-  g_resource_unref (truststore_resource);
-
   return truststore;
 
 out:
   print_openssl_errors ();
-  g_clear_pointer (&trustcert_names, g_strfreev);
+  g_clear_pointer (&bio, BIO_free);
   g_clear_pointer (&trustcert, X509_free);
   return NULL;
 }
