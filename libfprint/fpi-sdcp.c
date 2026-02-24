@@ -895,7 +895,6 @@ out:
 GBytes *
 fpi_sdcp_generate_random (GError **error)
 {
-  g_autoptr(GBytes) res = NULL;
   guint8 *random = g_malloc0 (FPI_SDCP_RANDOM_SIZE);
 
   if (!RAND_bytes (random, FPI_SDCP_RANDOM_SIZE))
@@ -908,9 +907,7 @@ fpi_sdcp_generate_random (GError **error)
       return NULL;
     }
 
-  res = fpi_sdcp_bytes_new_secure_take (random, FPI_SDCP_RANDOM_SIZE);
-
-  return g_steal_pointer (&res);
+  return fpi_sdcp_bytes_new_secure_take (random, FPI_SDCP_RANDOM_SIZE);
 }
 
 gboolean
