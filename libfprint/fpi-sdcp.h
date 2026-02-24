@@ -141,6 +141,43 @@ GBytes *fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
                                          GError     **error);
 
 /**
+ * fpi_sdcp_key_agreement:
+ * @private_key: A 32-byte raw P-256 private scalar (device firmware key or host key)
+ * @peer_public_key: A 65-byte uncompressed P-256 public key of the peer
+ * @error: (out): #GError in case the return value is %NULL
+ *
+ * Computes ECDH(private_key, peer_public_key) and returns the 32-byte x-coordinate
+ * shared secret.  Used by both the host (ECDH(sk_h, pk_f)) and by drivers
+ * (ECDH(sk_f, pk_h)) to arrive at the same pre-master secret.
+ *
+ * Returns: A new #GBytes with the 32-byte raw shared secret, or %NULL on error
+ **/
+GBytes *fpi_sdcp_key_agreement (GBytes  *private_key,
+                                GBytes  *peer_public_key,
+                                GError **error);
+
+/**
+ * fpi_sdcp_kdf:
+ * @key: KBKDF key input
+ * @label: Label string (used without trailing NUL as the KBKDF salt)
+ * @context_a: (nullable): First context buffer, or %NULL
+ * @context_b: (nullable): Second context buffer, or %NULL (concatenated after @context_a)
+ * @length: Desired output length in bytes
+ * @error: (out): #GError in case the return value is %NULL
+ *
+ * Runs NIST SP 800-108r1 KBKDF in counter mode with HMAC-SHA256.
+ * Equivalent to: KDF(key, label, context_a || context_b, length).
+ *
+ * Returns: A new #GBytes of @length derived bytes, or %NULL on error
+ **/
+GBytes *fpi_sdcp_kdf (GBytes      *key,
+                      const gchar *label,
+                      GBytes      *context_a,
+                      GBytes      *context_b,
+                      gsize        length,
+                      GError     **error);
+
+/**
  * fpi_sdcp_mac:
  * @application_secret: The application secret to use as the HMAC key
  * @label: Label string (included with a trailing NUL byte), or %NULL

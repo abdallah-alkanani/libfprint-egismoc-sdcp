@@ -421,7 +421,7 @@ out:
   return FALSE;
 }
 
-static GBytes *
+GBytes *
 fpi_sdcp_kdf (GBytes      *key,
               const gchar *label,
               GBytes      *context_a,
@@ -797,9 +797,9 @@ out_error:
   return NULL;
 }
 
-static GBytes *
-fpi_sdcp_key_agreement (GBytes  *host_private_key,
-                        GBytes  *firmware_public_key,
+GBytes *
+fpi_sdcp_key_agreement (GBytes  *private_key,
+                        GBytes  *peer_public_key,
                         GError **error)
 {
   g_autoptr(GBytes) res = NULL;
@@ -809,11 +809,11 @@ fpi_sdcp_key_agreement (GBytes  *host_private_key,
   guint8 *key_agreement = NULL;
   gsize key_agreement_len = 0;
 
-  host_pkey = fpi_sdcp_get_private_pkey (host_private_key, error);
+  host_pkey = fpi_sdcp_get_private_pkey (private_key, error);
   if (!host_pkey)
     goto out;
 
-  device_pkey = fpi_sdcp_get_public_pkey (firmware_public_key, error);
+  device_pkey = fpi_sdcp_get_public_pkey (peer_public_key, error);
   if (!device_pkey)
     goto out;
 
