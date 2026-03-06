@@ -33,6 +33,9 @@ G_DEFINE_BOXED_TYPE (FpiSdcpClaim, fpi_sdcp_claim, fpi_sdcp_claim_copy, fpi_sdcp
 static void
 print_openssl_errors (void)
 {
+  if (g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, G_LOG_DOMAIN))
+    return;
+
   gulong e = 0;
 
   e = ERR_get_error ();

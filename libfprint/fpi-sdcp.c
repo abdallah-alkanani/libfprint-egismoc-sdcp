@@ -46,6 +46,9 @@
 static void
 print_openssl_errors (void)
 {
+  if (g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, G_LOG_DOMAIN))
+    return;
+
   gulong e = 0;
 
   e = ERR_get_error ();
@@ -59,6 +62,9 @@ print_openssl_errors (void)
 static void
 print_certificate (X509 *certificate)
 {
+  if (g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, G_LOG_DOMAIN))
+    return;
+
   BIO *bio = BIO_new (BIO_s_mem ());
   BUF_MEM *bio_mem = NULL;
 

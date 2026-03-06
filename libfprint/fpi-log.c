@@ -25,6 +25,9 @@ void
                             const guint8 *buf,
                             gsize len)
 {
+  if (g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, log_domain))
+    return;
+
   g_autoptr(GString) line = NULL;
 
   line = g_string_new ("");
@@ -47,6 +50,9 @@ void
   (fpi_dbg_hex_dump_gbytes) (const gchar *log_domain,
                              GBytes      *gbytes)
 {
+  if (g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, log_domain))
+    return;
+
   gsize len = 0;
   const guint8 *buf = g_bytes_get_data (gbytes, &len);
 
