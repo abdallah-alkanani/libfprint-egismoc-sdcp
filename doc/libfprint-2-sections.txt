@@ -395,6 +395,7 @@ fpi_sdcp_claim_get_type
 fpi_sdcp_claim_new
 fpi_sdcp_claim_copy
 fpi_sdcp_claim_free
+fpi_sdcp_claim_hash
 </SECTION>
 
 <SECTION>
@@ -407,7 +408,6 @@ fpi_sdcp_verify_reconnect
 fpi_sdcp_verify_identify
 fpi_sdcp_generate_enrollment_id
 fpi_sdcp_mac
-fpi_sdcp_hash_claim
 </SECTION>
 
 <SECTION>

@@ -192,6 +192,7 @@ if 'sdcp' in driver_helpers
         'fp-sdcp-device.c',
     ]
     libfprint_private_sources += [
+        'fpi-sdcp-claim.c',
         'fpi-sdcp.c',
         'fpi-sdcp-device.c',
     ]
@@ -199,6 +200,7 @@ if 'sdcp' in driver_helpers
         'fp-sdcp-device.h',
     ]
     libfprint_private_headers += [
+        'fpi-sdcp-claim.h',
         'fpi-sdcp.h',
         'fpi-sdcp-device.h',
     ]

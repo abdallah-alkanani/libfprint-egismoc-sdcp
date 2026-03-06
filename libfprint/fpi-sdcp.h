@@ -194,16 +194,3 @@ GBytes *fpi_sdcp_mac (GBytes      *application_secret,
                       GBytes      *data_a,
                       GBytes      *data_b,
                       GError     **error);
-
-/**
- * fpi_sdcp_hash_claim:
- * @claim: The #FpiSdcpClaim to hash
- * @error: (out): #GError in case the return value is %NULL
- *
- * Computes SHA256 over the claim fields (model_certificate || device_public_key
- * || firmware_public_key || firmware_hash || model_signature || device_signature).
- *
- * Returns: A new #GBytes with the SHA256 hash
- **/
-GBytes *fpi_sdcp_hash_claim (FpiSdcpClaim *claim,
-                             GError      **error);

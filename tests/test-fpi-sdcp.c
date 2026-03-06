@@ -21,6 +21,7 @@
 #include "fpi-log.h"
 
 #include "fpi-sdcp.h"
+#include "fpi-sdcp-claim.h"
 #include "fpi-sdcp-device.h"
 
 /* We can re-use the device test payloads from virtual-sdcp */
@@ -103,7 +104,7 @@ compute_connect_mac (void)
   g_autoptr(GError) error = NULL;
   g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
   g_autoptr(GBytes) app_secret = g_bytes_from_hex (application_secret_hex);
-  g_autoptr(GBytes) claim_hash = fpi_sdcp_hash_claim (claim, &error);
+  g_autoptr(GBytes) claim_hash = fpi_sdcp_claim_hash (claim, &error);
 
   g_assert_no_error (error);
 

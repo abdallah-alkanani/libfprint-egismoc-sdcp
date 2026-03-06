@@ -37,6 +37,7 @@
 #include "fpi-log.h"
 
 #include "../fpi-sdcp.h"
+#include "../fpi-sdcp-claim.h"
 #include "../fp-sdcp-device-private.h"
 #include "virtual-sdcp.h"
 
@@ -97,7 +98,7 @@ get_fake_sdcp_claim (const gchar *certificate_hex)
 static GBytes *
 compute_connect_mac (FpiSdcpClaim *claim, GBytes *app_secret, GError **error)
 {
-  g_autoptr(GBytes) claim_hash = fpi_sdcp_hash_claim (claim, error);
+  g_autoptr(GBytes) claim_hash = fpi_sdcp_claim_hash (claim, error);
 
   if (!claim_hash)
     return NULL;

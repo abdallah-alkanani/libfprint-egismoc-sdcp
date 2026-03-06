@@ -21,6 +21,7 @@
 #include "fpi-log.h"
 
 #include "fpi-sdcp.h"
+#include "fpi-sdcp-claim.h"
 #include "sdcp/fpi-sdcp-truststore-resource.h"
 
 #include <openssl/bn.h>
@@ -748,71 +749,6 @@ out_error:
 }
 
 GBytes *
-fpi_sdcp_hash_claim (FpiSdcpClaim *claim,
-                     GError      **error)
-{
-  g_autoptr(GBytes) res = NULL;
-  EVP_MD_CTX *sh256_ctx;
-  EVP_MD *sha256;
-  guint8 *hash = NULL;
-  guint hash_len = 0;
-
-  sh256_ctx = EVP_MD_CTX_create ();
-  sha256 = EVP_MD_fetch (NULL, "SHA256", NULL);
-  if (!EVP_DigestInit_ex (sh256_ctx, sha256, NULL))
-    goto out_error;
-
-  if (!EVP_DigestUpdate (sh256_ctx,
-                         g_bytes_get_data (claim->model_certificate, NULL),
-                         g_bytes_get_size (claim->model_certificate)))
-    goto out_error;
-
-  if (!EVP_DigestUpdate (sh256_ctx,
-                         g_bytes_get_data (claim->device_public_key, NULL),
-                         g_bytes_get_size (claim->device_public_key)))
-    goto out_error;
-
-  if (!EVP_DigestUpdate (sh256_ctx,
-                         g_bytes_get_data (claim->firmware_public_key, NULL),
-                         g_bytes_get_size (claim->firmware_public_key)))
-    goto out_error;
-
-  if (!EVP_DigestUpdate (sh256_ctx,
-                         g_bytes_get_data (claim->firmware_hash, NULL),
-                         g_bytes_get_size (claim->firmware_hash)))
-    goto out_error;
-
-  if (!EVP_DigestUpdate (sh256_ctx,
-                         g_bytes_get_data (claim->model_signature, NULL),
-                         g_bytes_get_size (claim->model_signature)))
-    goto out_error;
-
-  if (!EVP_DigestUpdate (sh256_ctx,
-                         g_bytes_get_data (claim->device_signature, NULL),
-                         g_bytes_get_size (claim->device_signature)))
-    goto out_error;
-
-  hash = g_malloc0 (EVP_MAX_MD_SIZE);
-  if (!EVP_DigestFinal_ex (sh256_ctx, hash, &hash_len))
-    goto out_error;
-
-  EVP_MD_CTX_free (sh256_ctx);
-  EVP_MD_free (sha256);
-
-  res = fpi_sdcp_bytes_new_secure_take (hash, hash_len);
-  return g_steal_pointer (&res);
-
-out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                      "OpenSSL error hashing the SDCP claim"));
-  print_openssl_errors ();
-  g_clear_pointer (&sh256_ctx, EVP_MD_CTX_free);
-  g_clear_pointer (&sha256, EVP_MD_free);
-  g_clear_pointer (&hash, g_free);
-  return NULL;
-}
-
-GBytes *
 fpi_sdcp_key_agreement (GBytes  *private_key,
                         GBytes  *peer_public_key,
                         GError **error)
@@ -1022,7 +958,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
   /* SDCP Connect: 5.iv. Validate the MAC over H(claim) */
 
-  claim_hash = fpi_sdcp_hash_claim (claim, error);
+  claim_hash = fpi_sdcp_claim_hash (claim, error);
   if (!claim_hash)
     goto out_error;
 
