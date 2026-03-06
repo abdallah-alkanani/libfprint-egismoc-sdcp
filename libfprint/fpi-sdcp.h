@@ -199,3 +199,23 @@ GBytes *fpi_sdcp_mac (GBytes      *application_secret,
                       GBytes      *data_a,
                       GBytes      *data_b,
                       GError     **error);
+
+/**
+ * fpi_sdcp_verify_certificate:
+ * @x509_certificate: An X.509 certificate in DER (ASN.1) format
+ * @additional_trust_store: (nullable): An optional #GResource containing
+ *   additional PEM certificates at the path %FPI_SDCP_TRUST_STORE_PATH that
+ *   are merged into the default SDCP trust store.
+ *   Use %NULL to use only the default trust store.
+ * @verification_flags: Flags to control certificate verification behaviour.
+ *   See #FpiDeviceSdcpVerificationFlags for details.
+ * @error: (out): #GError on failure
+ *
+ * Verifies an X.509 certificate (DER-encoded) against the SDCP trust store.
+ *
+ * Returns: %TRUE if the certificate is trusted
+ **/
+gboolean fpi_sdcp_verify_certificate (GBytes                        *x509_certificate,
+                                      GResource                     *additional_trust_store,
+                                      FpiDeviceSdcpVerificationFlags verification_flags,
+                                      GError                       **error);

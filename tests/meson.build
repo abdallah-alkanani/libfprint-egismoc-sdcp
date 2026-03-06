@@ -271,6 +271,13 @@ if 'sdcp' in driver_helpers
     unit_tests += [
         'fpi-sdcp',
     ]
+
+    if installed_tests
+        install_data(
+            'sdcp-hello-model-cert.pem',
+            install_dir: installed_tests_testdir,
+        )
+    endif
 endif
 
 test_utils = static_library('fprint-test-utils',

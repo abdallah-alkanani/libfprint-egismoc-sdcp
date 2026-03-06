@@ -405,6 +405,7 @@ fpi_sdcp_claim_hash
 <TITLE>SDCP Cryptographic Operations</TITLE>
 fpi_sdcp_generate_host_key
 fpi_sdcp_generate_random
+fpi_sdcp_verify_certificate
 fpi_sdcp_verify_connect
 fpi_sdcp_verify_reconnect
 fpi_sdcp_verify_identify

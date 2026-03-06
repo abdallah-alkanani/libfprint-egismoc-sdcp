@@ -28,6 +28,10 @@
 #include "virtual-sdcp-truststore-resource.h"
 #include "drivers/virtual-sdcp/virtual-sdcp.h"
 
+#include <openssl/bio.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+
 /*
  * Fixed host key material used for the deterministic key exchange test.
  *
@@ -585,6 +589,66 @@ test_sdcp_mac_wrong_data (void)
   g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
 }
 
+static gboolean
+verify_model_certificate (GBytes                        *pem,
+                          FpiDeviceSdcpVerificationFlags flags,
+                          GError                       **error)
+{
+  g_autoptr(GBytes) der_bytes = NULL;
+  const guint8 *pem_data;
+  gsize pem_len;
+  BIO *bio;
+  X509 *x509;
+  int der_len;
+  guint8 *der;
+  guint8 *der_ptr;
+
+  pem_data = g_bytes_get_data (pem, &pem_len);
+  bio = BIO_new_mem_buf (pem_data, pem_len);
+  x509 = PEM_read_bio_X509 (bio, NULL, NULL, NULL);
+  BIO_free (bio);
+
+  g_assert_nonnull (x509);
+
+  der_len = i2d_X509 (x509, NULL);
+  der = g_malloc (der_len);
+  der_ptr = der;
+  i2d_X509 (x509, &der_ptr);
+  X509_free (x509);
+
+  der_bytes = g_bytes_new_take (der, der_len);
+
+  return fpi_sdcp_verify_certificate (der_bytes, NULL, flags, error);
+}
+
+static void
+test_verify_real_model_cert (void)
+{
+  g_autoptr(GError) load_error = NULL;
+  g_autoptr(GError) error = NULL;
+  g_autofree gchar *cert_path = NULL;
+  g_autofree gchar *cert_pem = NULL;
+  gsize cert_len = 0;
+  g_autoptr(GBytes) cert_bytes = NULL;
+
+  cert_path = g_test_build_filename (G_TEST_DIST, "sdcp-hello-model-cert.pem", NULL);
+
+  g_assert_true (g_file_get_contents (cert_path, &cert_pem, &cert_len, &load_error));
+  g_assert_no_error (load_error);
+
+  cert_bytes = g_bytes_new (cert_pem, cert_len);
+
+  /*
+   * "Secure BIO Sensor" cert signed by "Windows Hello 19B92965 CA 2018"
+   * (which is in the default SDCP trust store). The cert expired in Aug 2019
+   * so we must skip the time check.
+   */
+  g_assert_true (verify_model_certificate (cert_bytes,
+                                           FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
+                                           &error));
+  g_assert_no_error (error);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -600,6 +664,7 @@ main (int argc, char *argv[])
   g_test_add_func ("/sdcp/mac", test_sdcp_mac);
   g_test_add_func ("/sdcp/mac/wrong_mac", test_sdcp_mac_wrong_mac);
   g_test_add_func ("/sdcp/mac/wrong_data", test_sdcp_mac_wrong_data);
+  g_test_add_func ("/sdcp/verify_model_cert/real_ms_signed", test_verify_real_model_cert);
 
   return g_test_run ();
 }

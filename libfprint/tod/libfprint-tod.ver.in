@@ -288,6 +288,7 @@ global:
     fpi_sdcp_key_agreement;
     fpi_sdcp_kdf;
     fpi_sdcp_mac;
+    fpi_sdcp_verify_certificate;
     fpi_sdcp_verify_connect;
     fpi_sdcp_verify_identify;
     fpi_sdcp_verify_reconnect;
