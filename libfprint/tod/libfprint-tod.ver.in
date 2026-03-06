@@ -258,6 +258,7 @@ global:
     fpi_sdcp_claim_copy;
     fpi_sdcp_claim_free;
     fpi_sdcp_claim_get_type;
+    fpi_sdcp_claim_hash;
     fpi_sdcp_claim_new;
     fpi_sdcp_device_connect;
     fpi_sdcp_device_connect_complete;
@@ -284,6 +285,9 @@ global:
     fpi_sdcp_generate_enrollment_id;
     fpi_sdcp_generate_host_key;
     fpi_sdcp_generate_random;
+    fpi_sdcp_key_agreement;
+    fpi_sdcp_kdf;
+    fpi_sdcp_mac;
     fpi_sdcp_verify_connect;
     fpi_sdcp_verify_identify;
     fpi_sdcp_verify_reconnect;
