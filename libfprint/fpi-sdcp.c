@@ -494,16 +494,18 @@ fpi_sdcp_mac (GBytes      *application_secret,
               GError     **error)
 {
   g_autoptr(GBytes) res = NULL;
-
   EVP_MAC *hmac;
   EVP_MAC_CTX *hmac_ctx;
   guint8 *mac = NULL;
   gsize mac_len = 0;
-
   OSSL_PARAM params[] = {
     OSSL_PARAM_construct_utf8_string (OSSL_MAC_PARAM_DIGEST, (gchar *) "SHA256", 0),
     OSSL_PARAM_construct_end (),
   };
+
+  g_return_val_if_fail (application_secret != NULL, NULL);
+  g_return_val_if_fail (label != NULL, NULL);
+  g_return_val_if_fail (data_a != NULL || data_b != NULL, NULL);
 
   hmac = EVP_MAC_fetch (NULL, "hmac", NULL);
   hmac_ctx = EVP_MAC_CTX_new (hmac);
@@ -515,16 +517,31 @@ fpi_sdcp_mac (GBytes      *application_secret,
     goto out_error;
 
   if (label)
-    if (!EVP_MAC_update (hmac_ctx, (guchar *) label, strlen (label) + 1)) /* +1 due to unsigned */
-      goto out_error;
+    {
+      /* include NUL terminator per SDCP spec, that requires NUL-terminated
+       * strings for MAC computation
+       */
+      if (!EVP_MAC_update (hmac_ctx, (guchar *) label, strlen (label) + 1))
+        goto out_error;
+    }
 
   if (data_a)
-    if (!EVP_MAC_update (hmac_ctx, g_bytes_get_data (data_a, NULL), g_bytes_get_size (data_a)))
-      goto out_error;
+    {
+      gsize data_len;
+      gconstpointer data = g_bytes_get_data (data_a, &data_len);
+
+      if (!EVP_MAC_update (hmac_ctx, data, data_len))
+        goto out_error;
+    }
 
   if (data_b)
-    if (!EVP_MAC_update (hmac_ctx, g_bytes_get_data (data_b, NULL), g_bytes_get_size (data_b)))
-      goto out_error;
+    {
+      gsize data_len;
+      gconstpointer data = g_bytes_get_data (data_b, &data_len);
+
+      if (!EVP_MAC_update (hmac_ctx, data, data_len))
+        goto out_error;
+    }
 
   mac = g_malloc0 (FPI_SDCP_MAC_SIZE);
   if (!EVP_MAC_final (hmac_ctx, mac, &mac_len, FPI_SDCP_MAC_SIZE))
@@ -937,6 +954,14 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   g_autoptr(GBytes) out_app_secret = NULL;
   guint8 *app_secret_buf = NULL;
 
+  g_return_val_if_fail (host_private_key != NULL, FALSE);
+  g_return_val_if_fail (host_random != NULL, FALSE);
+  g_return_val_if_fail (device_random != NULL, FALSE);
+  g_return_val_if_fail (claim != NULL, FALSE);
+  g_return_val_if_fail (mac != NULL, FALSE);
+  g_return_val_if_fail (application_secret != NULL, FALSE);
+  g_return_val_if_fail (*application_secret == NULL, FALSE);
+
   const guint8 *cert_ptr;
   gsize cert_len = 0;
   X509 *cert = NULL;
@@ -947,7 +972,8 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
   /* SDCP Connect: 5.i. Perform key agreement */
 
-  key_agreement = fpi_sdcp_key_agreement (host_private_key, claim->firmware_public_key, error);
+  key_agreement = fpi_sdcp_key_agreement (host_private_key,
+                                          claim->firmware_public_key, error);
   if (!key_agreement)
     goto out_error;
 
@@ -968,7 +994,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   fp_dbg ("master_secret:");
   fp_dbg_hex_dump_gbytes (master_secret);
 
-  /* SDCP Connect: 5.iii. Derive MAC secret and symetric key */
+  /* SDCP Connect: 5.iii. Derive MAC secret and symmetric key */
 
   application_keys = fpi_sdcp_kdf (master_secret,
                                    claim->application_keys_label ?
@@ -1129,10 +1155,6 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
     }
 
   /* output application_secret */
-
-  if (*application_secret)
-    g_bytes_unref (*application_secret);
-
   *application_secret = g_steal_pointer (&out_app_secret);
 
   return TRUE;
