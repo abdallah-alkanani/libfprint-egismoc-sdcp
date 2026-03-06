@@ -25,6 +25,7 @@
 #include "fpi-sdcp-device.h"
 
 /* We can re-use the device test payloads from virtual-sdcp */
+#include "virtual-sdcp-truststore-resource.h"
 #include "drivers/virtual-sdcp/virtual-sdcp.h"
 
 /*
@@ -210,23 +211,26 @@ test_verify_connect (void)
 {
   g_autoptr(GBytes) application_secret = NULL;
   g_autoptr(GError) error = NULL;
-
   g_autoptr(GBytes) host_private_key = g_bytes_from_hex (host_private_key_hex);
   g_autoptr(GBytes) host_random = g_bytes_from_hex (host_random_hex);
   g_autoptr(GBytes) device_random = g_bytes_from_hex (device_random_hex);
   g_autoptr(GBytes) connect_mac = compute_connect_mac ();
-  FpiSdcpClaim *claim = get_fake_sdcp_claim ();
-
   g_autoptr(GBytes) expected_application_secret = g_bytes_from_hex (application_secret_hex);
+  g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
+
+  fpi_virtual_sdcp_truststore_register_resource ();
 
   g_assert_true (fpi_sdcp_verify_connect (host_private_key,
                                           host_random,
                                           device_random,
                                           claim,
                                           connect_mac,
+                                          fpi_virtual_sdcp_truststore_get_resource (),
                                           FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
                                           &application_secret,
                                           &error));
+
+  fpi_virtual_sdcp_truststore_unregister_resource ();
 
   g_assert_no_error (error);
   g_assert_cmpuint (g_bytes_get_size (application_secret), ==, FPI_SDCP_APPLICATION_SECRET_SIZE);
@@ -239,8 +243,6 @@ test_verify_connect (void)
 
   g_assert_cmpmem (g_bytes_get_data (expected_application_secret, NULL), g_bytes_get_size (expected_application_secret),
                    g_bytes_get_data (application_secret, NULL), g_bytes_get_size (application_secret));
-
-  fpi_sdcp_claim_free (claim);
 }
 
 static void

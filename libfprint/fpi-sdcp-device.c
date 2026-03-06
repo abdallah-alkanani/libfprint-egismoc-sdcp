@@ -459,6 +459,7 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
                                 device_random,
                                 claim,
                                 mac,
+                                cls->get_trust_store ? cls->get_trust_store (self) : NULL,
                                 cls->verification_flags,
                                 &application_secret,
                                 &error))

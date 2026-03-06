@@ -50,6 +50,10 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  * @device_random: The random provided in the device's ConnectResponse (r_d)
  * @claim: #FpiSdcpClaim provided in the device's ConnectResponse (c)
  * @mac: The MAC provided in the device's ConnectResponse (m)
+ * @additional_trust_store: (nullable): An optional #GResource containing additional
+ *   PEM certificates at the path %FPI_SDCP_TRUST_STORE_PATH that are merged
+ *   into the default SDCP trust store before certificate verification.
+ *   Pass %NULL to use only the default trust store.
  * @verification_flags: Flags to control which verifications should be performed
  *   during the ConnectResponse validation.
  *   See #FpiDeviceSdcpVerificationFlags for details.
@@ -78,6 +82,7 @@ gboolean fpi_sdcp_verify_connect (GBytes                        *host_private_ke
                                   GBytes                        *device_random,
                                   FpiSdcpClaim                  *claim,
                                   GBytes                        *mac,
+                                  GResource                     *additional_trust_store,
                                   FpiDeviceSdcpVerificationFlags verification_flags,
                                   GBytes                       **application_secret,
                                   GError                       **error);

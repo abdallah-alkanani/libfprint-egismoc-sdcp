@@ -49,6 +49,8 @@
 #define FPI_SDCP_DEFAULT_LABEL_ENROLL "enroll"
 #define FPI_SDCP_DEFAULT_LABEL_IDENTIFY "identify"
 
+#define FPI_SDCP_TRUST_STORE_PATH "/org/freedesktop/fprint/SDCP/truststore/"
+
 /**
  * FpiDeviceSdcpVerificationFlags:
  * @FPI_DEVICE_SDCP_VERIFICATION_DEFAULT: No flags. Perform all verifications.
@@ -107,6 +109,12 @@ typedef enum {
  * @identify: Start identification process. On completion, the driver must call
  *   fpi_sdcp_device_identify_complete(). To request the user to retry the
  *   fpi_sdcp_device_identify_retry() function is used.
+ * @get_trust_store: (optional): Return a #GResource containing additional PEM
+ *   certificates at the path %FPI_SDCP_TRUST_STORE_PATH that will be merged
+ *   into the default SDCP trust store during certificate verification.
+ *   This allows drivers to supply device-specific CA certificates
+ *   without affecting other devices. If not implemented, only the default trust
+ *   store is used.
  *
  * These are the main entry points for drivers implementing SDCP.
  *
@@ -136,14 +144,16 @@ struct _FpSdcpDeviceClass
 
   FpiDeviceSdcpVerificationFlags verification_flags;
 
-  void                           (*open)          (FpSdcpDevice *sdcp_device);
-  void                           (*connect)       (FpSdcpDevice *sdcp_device);
-  void                           (*reconnect)     (FpSdcpDevice *sdcp_device);
-  void                           (*list)          (FpSdcpDevice *sdcp_device);
-  void                           (*enroll)        (FpSdcpDevice *sdcp_device);
-  void                           (*enroll_commit) (FpSdcpDevice *sdcp_device,
-                                                   GBytes       *id);
-  void                           (*identify)      (FpSdcpDevice *sdcp_device);
+  void                           (*open)            (FpSdcpDevice *sdcp_device);
+  void                           (*connect)         (FpSdcpDevice *sdcp_device);
+  void                           (*reconnect)       (FpSdcpDevice *sdcp_device);
+  void                           (*list)            (FpSdcpDevice *sdcp_device);
+  void                           (*enroll)          (FpSdcpDevice *sdcp_device);
+  void                           (*enroll_commit)   (FpSdcpDevice *sdcp_device,
+                                                     GBytes       *id);
+  void                           (*identify)        (FpSdcpDevice *sdcp_device);
+
+  GResource                    * (*get_trust_store) (FpSdcpDevice *sdcp_device);
 
   /*< private >*/
   /* padding for future expansion */

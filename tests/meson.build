@@ -280,7 +280,10 @@ test_utils = static_library('fprint-test-utils',
     dependencies: libfprint_private_dep,
     install: false)
 
-unit_tests_deps = { 'fpi-assembling' : [cairo_dep] }
+unit_tests_deps = {
+    'fpi-assembling' : [cairo_dep],
+    'fpi-sdcp' : [declare_dependency(sources: virtual_sdcp_truststore_resource)],
+}
 
 foreach test_name: unit_tests
     if unit_tests_deps.has_key(test_name)

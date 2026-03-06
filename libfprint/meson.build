@@ -160,6 +160,18 @@ driver_sources = {
         [ 'drivers/focaltech_moc/focaltech_moc.c' ],
 }
 
+virtual_sdcp_truststore_resource = gnome.compile_resources(
+    'virtual-sdcp-truststore-resource',
+    'drivers/virtual-sdcp/virtual-sdcp-truststore.gresource.xml',
+    source_dir: 'drivers/virtual-sdcp',
+    c_name: 'fpi_virtual_sdcp_truststore',
+    extra_args: ['--manual-register'],
+)
+
+driver_generated_sources = {
+    'virtual_sdcp' : virtual_sdcp_truststore_resource,
+}
+
 helper_sources = {
     'aeslib' :
         [ 'drivers/aeslib.c' ],
@@ -178,9 +190,11 @@ helper_sources = {
 }
 
 drivers_sources = []
+drivers_generated_sources = []
 drivers_cflags = []
 foreach driver: drivers
     drivers_sources += driver_sources[driver]
+    drivers_generated_sources += driver_generated_sources.get(driver, [])
 endforeach
 foreach helper : driver_helpers
     drivers_sources += helper_sources[helper]
@@ -305,7 +319,10 @@ if get_option('tod')
 endif
 
 libfprint_drivers = static_library('fprint-drivers',
-    sources: drivers_sources,
+    sources: [
+        drivers_sources,
+        drivers_generated_sources,
+    ],
     c_args: drivers_cflags,
     dependencies: deps,
     link_with: libfprint_private,
@@ -364,6 +381,7 @@ udev_hwdb = executable('fprint-list-udev-hwdb',
 udev_hwdb_generator = custom_target('udev-hwdb',
     output: 'autosuspend.hwdb',
     depend_files: drivers_sources,
+    depends: drivers_generated_sources,
     capture: true,
     command: [ udev_hwdb ],
     install: false,
@@ -378,6 +396,7 @@ metainfo = executable('fprint-list-metainfo',
 metainfo_generator = custom_target('metainfo',
     output: 'org.freedesktop.libfprint.metainfo.xml',
     depend_files: drivers_sources,
+    depends: drivers_generated_sources,
     capture: true,
     command: [ metainfo ],
     install: true,
@@ -394,6 +413,7 @@ if install_udev_rules
     custom_target('udev-rules',
         output: '70-@0@.rules'.format(versioned_libname),
         depend_files: drivers_sources,
+        depends: drivers_generated_sources,
         capture: true,
         command: [ udev_rules ],
         install: true,

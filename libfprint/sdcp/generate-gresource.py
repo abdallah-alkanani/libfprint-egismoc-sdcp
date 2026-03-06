@@ -8,7 +8,7 @@ if len(sys.argv) != 3:
   print("Usage: generate-gresource.py <libfprint_sdcp_source_dir> <output_xml_file>")
   sys.exit(1)
 
-gresource_prefix = "/org/freedesktop/fprint/sdcp"
+gresource_prefix = "/org/freedesktop/fprint/SDCP"
 relative_folder = "truststore"
 full_folder = os.path.join(sys.argv[1], relative_folder)
 output = sys.argv[2]

@@ -79,9 +79,6 @@ class VirtualSDCPBase(unittest.TestCase):
         self.set_env('FP_VIRTUAL_SDCP_DETERMINISTIC')
         self.set_env('FP_SDCP_FIXED_RANDOM')
 
-    def disable_device_emulation(self):
-        self.remove_env('FP_DEVICE_EMULATION')
-
 
 class VirtualSDCPOpen(VirtualSDCPBase):
     def tearDown(self):
@@ -105,16 +102,6 @@ class VirtualSDCPOpenDeterministic(VirtualSDCPOpen):
 
 
 class VirtualSDCPOpenFailures(VirtualSDCPBase):
-
-    def test_fails_to_open_if_not_using_device_emulation(self):
-        if not 'FP_TESTS_INDEPENDENT' in os.environ:
-            self.skipTest("This can only run when tests are independent")
-
-        self.disable_device_emulation()
-        with self.assertRaises(GLib.Error) as error:
-            self.dev.open_sync()
-        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
-                                                FPrint.DeviceError.UNTRUSTED))
 
     def test_fails_to_open_if_device_certificate_is_untrusted(self):
         self.use_untrusted_certificate()

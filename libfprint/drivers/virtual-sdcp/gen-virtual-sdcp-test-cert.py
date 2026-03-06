@@ -6,16 +6,15 @@ PKI structure:
   SDCP Virtual Test Root CA  (self-signed, CA:TRUE)
        └── SDCP Virtual Test Model  (signed by Root CA, CA:FALSE)
 
-The Root CA certificate is written to the truststore so that libfprint can
-verify the model certificate.  The model certificate's public key comes from
+The Root CA certificate is written to the driver's own trust store directory
+(drivers/virtual-sdcp/) so that it is compiled into the
+virtual-sdcp driver's GResource and supplied at runtime via the
+get_trust_store vfunc.  It is never part of the default SDCP trust store.
+The model certificate's public key comes from
 SecureDeviceConnectionProtocol/src/test/testkeys.c.
 
-At runtime, fpi_sdcp_get_truststore() will skip any certificate whose
-filename starts with "SDCP Virtual" unless FP_DEVICE_EMULATION is set,
-so the test CA never reaches production builds.
-
 Usage:
-    cd libfprint/drivers/
+    cd libfprint/drivers/virtual-sdcp/
     python3 gen-virtual-sdcp-test-cert.py
 """
 
@@ -186,10 +185,9 @@ print()
 # Write root CA PEM to truststore; remove the old self-signed model CA if present
 # ---------------------------------------------------------------------------
 
-here       = pathlib.Path(__file__).resolve().parent          # libfprint/drivers/
-truststore = here.parent / "sdcp" / "truststore"
+here = pathlib.Path(__file__).resolve().parent
 
-root_ca_pem_path = truststore / f"{ROOT_CA_CN}.pem"
+root_ca_pem_path = here / f"{ROOT_CA_CN}.pem"
 force_root_ca_regenerate = "--force-recreate-root-ca" in sys.argv
 
 if root_ca_pem_path.exists() and not force_root_ca_regenerate:
@@ -200,11 +198,11 @@ else:
     )
     print(f"Root CA PEM written to: {root_ca_pem_path.relative_to(here.parent.parent)}")
 
-old_model_ca = truststore / "SDCP Virtual Test Model CA.pem"
+old_model_ca = here / "SDCP Virtual Test Model CA.pem"
 if old_model_ca.exists():
     old_model_ca.unlink()
     print(f"Removed old self-signed model CA: {old_model_ca.relative_to(here.parent.parent)}")
 print()
-print("Note: fpi_sdcp_get_truststore() only loads certs whose filename starts")
-print("with 'SDCP Virtual' when FP_DEVICE_EMULATION is set, so this test CA is")
-print("never trusted in production builds.")
+print("Note: the Root CA PEM is compiled into the virtual-sdcp driver's GResource")
+print("via drivers/virtual-sdcp/ and supplied at runtime through the")
+print("get_trust_store vfunc.  It is never part of the default SDCP trust store.")

@@ -219,48 +219,30 @@ out_error:
 }
 
 static gboolean
-fpi_sdcp_trust_store_includes_test_certificate (void)
-{
-  if (!fpi_device_emulation_mode_enabled (NULL))
-    return FALSE;
-
-  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE"), "1") != 0;
-}
-
-static X509_STORE *
-fpi_sdcp_build_truststore (GError **error)
+fpi_sdcp_load_trustcerts_from_resource (X509_STORE  *truststore,
+                                        GResource   *resource,
+                                        const gchar *resource_path,
+                                        GError     **error)
 {
   g_autoptr(GError) local_error = NULL;
-  g_autoptr(GResource) truststore_resource = NULL;
   g_auto(GStrv) trustcert_names = NULL;
-  X509_STORE *truststore = NULL;
-  const gchar *truststore_resource_path = "/org/freedesktop/fprint/sdcp/truststore/";
   const gchar *trustcert_ptr;
   gsize trustcert_len = 0;
   BIO *bio = NULL;
   X509 *trustcert = NULL;
 
-  truststore = X509_STORE_new ();
-  if (!truststore)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                   "Failed initializing SDCP X509 certificate store"));
-      goto out;
-    }
+  trustcert_names = g_resource_enumerate_children (resource,
+                                                   resource_path,
+                                                   G_RESOURCE_LOOKUP_FLAGS_NONE,
+                                                   &local_error);
 
-  fpi_sdcp_truststore_register_resource ();
-  truststore_resource = fpi_sdcp_truststore_get_resource ();
-  trustcert_names = g_resources_enumerate_children (truststore_resource_path,
-                                                    G_RESOURCE_LOOKUP_FLAGS_NONE,
-                                                    &local_error);
-  if (!trustcert_names)
+  if (!trustcert_names || *trustcert_names == NULL)
     {
       g_propagate_error (error,
                          fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                    "Error loading SDCP truststore certificates: %s",
                                                    local_error->message));
-      goto out;
+      return FALSE;
     }
 
   for (int i = 0; trustcert_names[i]; i++)
@@ -268,19 +250,9 @@ fpi_sdcp_build_truststore (GError **error)
       g_autoptr(GBytes) trustcert_gb = NULL;
       g_autofree gchar *trustcert_path = NULL;
 
-      if (g_str_has_prefix (trustcert_names[i], "SDCP Virtual"))
-        {
-          if (!fpi_sdcp_trust_store_includes_test_certificate ())
-            {
-              fp_dbg ("Skipping test-only certificate (test-only): %s",
-                      trustcert_names[i]);
-              continue;
-            }
-        }
-
       fp_dbg ("Adding certificate to SDCP truststore: %s", trustcert_names[i]);
-      trustcert_path = g_strconcat (truststore_resource_path, trustcert_names[i], NULL);
-      trustcert_gb = g_resource_lookup_data (truststore_resource,
+      trustcert_path = g_strconcat (resource_path, trustcert_names[i], NULL);
+      trustcert_gb = g_resource_lookup_data (resource,
                                              trustcert_path, 0,
                                              &local_error);
       if (!trustcert_gb)
@@ -320,48 +292,89 @@ fpi_sdcp_build_truststore (GError **error)
       X509_free (trustcert);
     }
 
-  return truststore;
+  return TRUE;
 
 out:
   print_openssl_errors ();
   g_clear_pointer (&bio, BIO_free);
   g_clear_pointer (&trustcert, X509_free);
+  return FALSE;
+}
+
+static X509_STORE *
+fpi_sdcp_build_truststore (GResource *additional_trust_store,
+                           GError   **error)
+{
+  GResource *default_resource = NULL;
+  X509_STORE *truststore = NULL;
+
+  truststore = X509_STORE_new ();
+  if (!truststore)
+    {
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "Failed initializing SDCP X509 certificate store"));
+      goto out;
+    }
+
+  fpi_sdcp_truststore_register_resource ();
+  default_resource = fpi_sdcp_truststore_get_resource ();
+
+  if (!fpi_sdcp_load_trustcerts_from_resource (truststore,
+                                               default_resource,
+                                               FPI_SDCP_TRUST_STORE_PATH,
+                                               error))
+    goto out;
+
+  if (additional_trust_store)
+    {
+      if (!fpi_sdcp_load_trustcerts_from_resource (truststore,
+                                                   additional_trust_store,
+                                                   FPI_SDCP_TRUST_STORE_PATH,
+                                                   error))
+        goto out;
+    }
+
+  return truststore;
+
+out:
+  g_clear_pointer (&truststore, X509_STORE_free);
   return NULL;
 }
 
 static X509_STORE *
-fpi_sdcp_get_truststore (GError **error)
+fpi_sdcp_get_truststore (GResource *additional_trust_store,
+                         GError   **error)
 {
-  static X509_STORE *truststore = NULL;
+  static X509_STORE *default_truststore = NULL;
 
-  /* In emulation mode, we want to allow the use of test-only certificates,
-   * so we cannot cache the truststore if it contains test-only certificates.
-   */
-  if (fpi_device_emulation_mode_enabled (NULL) &&
-      !fpi_sdcp_trust_store_includes_test_certificate ())
-    return fpi_sdcp_build_truststore (error);
+  /* When a driver provides its own trust store, we build a fresh combined
+   * truststore each time since the result is driver-specific. */
+  if (additional_trust_store)
+    return fpi_sdcp_build_truststore (additional_trust_store, error);
 
-  if (g_once_init_enter_pointer (&truststore))
+  if (g_once_init_enter_pointer (&default_truststore))
     {
-      g_once_init_leave_pointer (&truststore,
-                                 fpi_sdcp_build_truststore (error));
-      g_return_val_if_fail (truststore != NULL, NULL);
+      g_once_init_leave_pointer (&default_truststore,
+                                 fpi_sdcp_build_truststore (NULL, error));
+      g_return_val_if_fail (default_truststore != NULL, NULL);
     }
 
-  X509_STORE_up_ref (truststore);
-  return truststore;
+  X509_STORE_up_ref (default_truststore);
+  return default_truststore;
 }
 
 static gboolean
 fpi_sdcp_verify_certificate (X509                          *certificate,
+                             GResource                     *additional_trust_store,
                              FpiDeviceSdcpVerificationFlags verification_flags,
                              GError                       **error)
 {
   X509_STORE *sdcp_truststore = NULL;
   X509_STORE_CTX *ctx = NULL;
 
-  if (!(sdcp_truststore = fpi_sdcp_get_truststore (error)))
-    goto out_error;
+  if (!(sdcp_truststore = fpi_sdcp_get_truststore (additional_trust_store, error)))
+    goto out;
 
   ctx = X509_STORE_CTX_new ();
 
@@ -409,6 +422,7 @@ out_error:
                                                "OpenSSL error setting up certificate verification"));
   print_openssl_errors ();
   goto out;
+
 out_verify_error:
   g_propagate_error (error,
                      fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
@@ -878,6 +892,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                          GBytes                        *device_random,
                          FpiSdcpClaim                  *claim,
                          GBytes                        *mac,
+                         GResource                     *additional_trust_store,
                          FpiDeviceSdcpVerificationFlags verification_flags,
                          GBytes                       **application_secret,
                          GError                       **error)
@@ -1011,7 +1026,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
       print_certificate (cert);
 
-      if (!fpi_sdcp_verify_certificate (cert, verification_flags, error))
+      if (!fpi_sdcp_verify_certificate (cert, additional_trust_store, verification_flags, error))
         {
           fp_dbg ("SDCP model certificate verification failed");
           goto out;

@@ -41,6 +41,7 @@
 #include "fp-sdcp-device-private.h"
 
 #include "virtual-sdcp.h"
+#include "virtual-sdcp-truststore-resource.h"
 
 struct _FpDeviceVirtualSdcp
 {
@@ -309,6 +310,12 @@ allow_expired_certificate (void)
 }
 
 static inline gboolean
+use_untrusted_certificate (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE"), "1") == 0;
+}
+
+static inline gboolean
 use_deterministic_random (void)
 {
   return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_DETERMINISTIC"), "1") == 0;
@@ -416,6 +423,18 @@ dev_connect (FpSdcpDevice *sdcp_device)
   sdcp_cls->verification_flags = old_flags;
 }
 
+static GResource *
+dev_get_trust_store (FpSdcpDevice *sdcp_device)
+{
+  if (use_untrusted_certificate ())
+    {
+      fp_dbg ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE is set; not providing trust store.");
+      return NULL;
+    }
+
+  return fpi_virtual_sdcp_truststore_get_resource ();
+}
+
 static void
 dev_close (FpDevice *device)
 {
@@ -502,6 +521,7 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
   sdcp_dev_class->enroll = dev_enroll;
   sdcp_dev_class->enroll_commit = dev_enroll_commit;
   sdcp_dev_class->identify = dev_identify;
+  sdcp_dev_class->get_trust_store = dev_get_trust_store;
 
   if (!is_reconnect_supported ())
     sdcp_dev_class->reconnect = NULL;
@@ -510,4 +530,6 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
 
   fpi_device_class_auto_initialize_features (dev_class);
   dev_class->features |= FP_DEVICE_FEATURE_STORAGE;
+
+  fpi_virtual_sdcp_truststore_register_resource ();
 }
