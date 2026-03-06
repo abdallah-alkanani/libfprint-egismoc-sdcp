@@ -37,6 +37,7 @@
 #include "fpi-log.h"
 
 #include "../fpi-sdcp.h"
+#include "../fp-sdcp-device-private.h"
 #include "virtual-sdcp.h"
 
 struct _FpDeviceVirtualSdcp
@@ -94,15 +95,8 @@ get_fake_sdcp_claim (const gchar *certificate_hex)
 /******************************************************************************/
 
 static GBytes *
-get_application_secret (void)
+compute_connect_mac (FpiSdcpClaim *claim, GBytes *app_secret, GError **error)
 {
-  return g_bytes_from_hex (application_secret_hex);
-}
-
-static GBytes *
-compute_connect_mac (FpiSdcpClaim *claim, GError **error)
-{
-  g_autoptr(GBytes) app_secret = get_application_secret ();
   g_autoptr(GBytes) claim_hash = fpi_sdcp_hash_claim (claim, error);
 
   if (!claim_hash)
@@ -138,7 +132,9 @@ dev_identify (FpSdcpDevice *sdcp_device)
    * Compute the enrollment ID and identify MAC at runtime from the
    * application secret and the fixed test nonces.
    */
-  app_secret = get_application_secret ();
+  app_secret = fpi_sdcp_device_get_application_secret (sdcp_device);
+  g_assert (app_secret);
+
   enroll_nonce = g_bytes_from_hex (enrollment_nonce_hex);
   identify_nonce = g_bytes_from_hex (identify_nonce_hex);
 
@@ -182,7 +178,9 @@ dev_enroll_commit (FpSdcpDevice *sdcp_device, GBytes *id)
       g_autoptr(GBytes) nonce = NULL;
       g_autoptr(GBytes) expected_id = NULL;
 
-      app_secret = get_application_secret ();
+      app_secret = fpi_sdcp_device_get_application_secret (sdcp_device);
+      g_assert (app_secret);
+
       nonce = g_bytes_from_hex (enrollment_nonce_hex);
       expected_id = fpi_sdcp_generate_enrollment_id (app_secret, NULL,
                                                      nonce, &error);
@@ -273,7 +271,7 @@ dev_reconnect (FpSdcpDevice *sdcp_device)
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) random = NULL;
-  g_autoptr(GBytes) app_secret = get_application_secret ();
+  g_autoptr(GBytes) app_secret = NULL;
   g_autoptr(GBytes) reconnect_mac = NULL;
 
   /*
@@ -286,6 +284,9 @@ dev_reconnect (FpSdcpDevice *sdcp_device)
 
   g_assert (random);
   g_assert (g_bytes_get_size (random) == FPI_SDCP_RANDOM_SIZE);
+
+  app_secret = fpi_sdcp_device_get_application_secret (sdcp_device);
+  g_assert (app_secret);
 
   reconnect_mac = fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_RECONNECT,
                                 random, NULL, &error);
@@ -305,6 +306,43 @@ allow_expired_certificate (void)
   return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_ALLOW_EXPIRED_CERTIFICATE"), "1") == 0;
 }
 
+/*
+ * Perform device-side key exchange and derive the application secret.
+ * Equivalent to ECDH(sk_f, pk_h) + KBKDF with host_random and device_random,
+ * mirroring what the host computes via ECDH(sk_h, pk_f) + KBKDF.
+ */
+static GBytes *
+derive_application_secret (GBytes  *host_public_key,
+                           GBytes  *host_random,
+                           GBytes  *device_random,
+                           GError **error)
+{
+  g_autoptr(GBytes) firmware_private_key = g_bytes_from_hex (firmware_private_key_hex);
+  g_autoptr(GBytes) key_agreement = NULL;
+  g_autoptr(GBytes) master_secret = NULL;
+  g_autoptr(GBytes) application_keys = NULL;
+
+  key_agreement = fpi_sdcp_key_agreement (firmware_private_key, host_public_key, error);
+  if (!key_agreement)
+    return NULL;
+
+  master_secret = fpi_sdcp_kdf (key_agreement,
+                                FPI_SDCP_DEFAULT_LABEL_MASTER_SECRET,
+                                host_random, device_random,
+                                FPI_SDCP_MASTER_SECRET_SIZE, error);
+  if (!master_secret)
+    return NULL;
+
+  application_keys = fpi_sdcp_kdf (master_secret,
+                                   FPI_SDCP_DEFAULT_LABEL_APPLICATION_KEYS,
+                                   NULL, NULL,
+                                   FPI_SDCP_APPLICATION_KEYS_SIZE, error);
+  if (!application_keys)
+    return NULL;
+
+  return g_bytes_new_from_bytes (application_keys, 0, FPI_SDCP_APPLICATION_SECRET_SIZE);
+}
+
 static void
 dev_connect (FpSdcpDevice *sdcp_device)
 {
@@ -315,6 +353,7 @@ dev_connect (FpSdcpDevice *sdcp_device)
   g_autoptr(GBytes) host_random = NULL;
   g_autoptr(GBytes) host_public_key = NULL;
   g_autoptr(GBytes) device_random = NULL;
+  g_autoptr(GBytes) app_secret = NULL;
   g_autoptr(GBytes) connect_mac = NULL;
   g_autoptr(FpiSdcpClaim) claim = NULL;
   const gchar *model_certificate;
@@ -330,13 +369,26 @@ dev_connect (FpSdcpDevice *sdcp_device)
   g_assert (g_bytes_get_size (host_public_key) == FPI_SDCP_PUBLIC_KEY_SIZE);
 
   device_random = g_bytes_from_hex (device_random_hex);
-  model_certificate = model_certificate_hex;
+
+  /*
+   * Device-side key exchange: ECDH(sk_f, pk_h) + KDF -> application_secret.
+   * The host will compute the identical value via ECDH(sk_h, pk_f) + KDF, so
+   * the two sides will arrive at the same application_secret independently.
+   */
+  app_secret = derive_application_secret (host_public_key, host_random, device_random, &error);
+  if (!app_secret)
+    {
+      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL, error);
+      return;
+    }
 
   if (use_expired_certificate ())
     model_certificate = expired_model_certificate_hex;
+  else
+    model_certificate = model_certificate_hex;
 
   claim = get_fake_sdcp_claim (model_certificate);
-  connect_mac = compute_connect_mac (claim, &error);
+  connect_mac = compute_connect_mac (claim, app_secret, &error);
 
   old_flags = sdcp_cls->verification_flags;
   if (connect_mac && use_expired_certificate () && allow_expired_certificate ())

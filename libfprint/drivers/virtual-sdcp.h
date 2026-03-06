@@ -20,11 +20,34 @@
 
 #pragma once
 
-#include "fpi-compat.h"
+/*
+ * Device key material from the SDCP reference test run.
+ * See: https://github.com/Microsoft/SecureDeviceConnectionProtocol/blob/fe82ea1/README.md
+ *
+ * firmware_private_key_hex (sk_f) is used by dev_connect() to compute the
+ * application secret via ECDH(sk_f, pk_h) + KDF, mirroring what the real
+ * device firmware would do.  All other key fields (pk_d, pk_f, s_m, s_d,
+ * r_d) are taken directly from that same test run.
+ *
+ * To replace with fresh random key material:
+ *   - P-256 keypair (firmware or device keys):
+ *       openssl ecparam -name prime256v1 -genkey -noout -out key.pem
+ *       openssl ec -in key.pem -noout -text
+ *   - Random bytes (device_random_hex, enrollment_nonce_hex, identify_nonce_hex):
+ *       openssl rand -hex 32
+ *   - firmware_hash_hex: SHA-256 of actual firmware binary:
+ *       openssl dgst -sha256 -hex <firmware.bin>
+ *   - model_certificate_hex / expired_model_certificate_hex:
+ *       run libfprint/drivers/gen-virtual-sdcp-test-cert.py
+ *   - model_signature_hex / device_signature_hex:
+ *       recompute with the Python generator or by signing with sk_m / sk_d
+ *       (see signature coverage comments below)
+ */
 
 /* device keys */
 
-static const gchar device_random_hex[]       = "6e2f6c1abef2a1973fb1315a17e209fdb0c78520f1fd6a85d294d7aeb40a04a7";
+static const gchar firmware_private_key_hex[] = "1bdd42b6567101a59ef03e342138f506c83f27ecf21418cd9eaee223af7f3193";
+static const gchar device_random_hex[]         = "353eb43ffb422fc96c857140d5c399d588feef46f62bd363b97c823975bb27e7";
 static const gchar model_certificate_hex[]   = "308201873082012da003020102020102300a06082a8648ce3d04030230243122"
                                                "302006035504030c1953444350205669727475616c205465737420526f6f7420"
                                                "43413020170d3230303130313030303030305a180f3230393930313031303030"
@@ -51,26 +74,33 @@ static const gchar expired_model_certificate_hex[] = "3082018d30820133a003020102
                                                      "8648ce3d040302034800304502205ca95b6be59eb975b8aaf3278d725eb804ca"
                                                      "5d040c5f3cf9daa8090c4c2efaf6022100fefbe3fbbfe9cf280e7209ade444d8"
                                                      "19d98779ff702e5447080545b529af09de";
-static const gchar device_public_key_hex[]   = "04e2787890a684f95b96b9a2316ca8d3d33d4d79ff4c89dc6f9e888e973990d1"
-                                               "d3154133dcc8bd33b99af9dbf0673390d404d092498a3f214cd93f9b9f28fb5f"
-                                               "66";
-static const gchar firmware_public_key_hex[] = "04f06a84ab51a3a6e8ff46868f91dd720e4cdad21f2e090d11e8f9bfc2ea19ee"
-                                               "1b5eac850b4532968a9399f76cd779e7723e8c2ca73b597c0df5f73b94a36f2b"
-                                               "6c";
+static const gchar device_public_key_hex[]   = "04840f109357fbf397e44c895cbfaff6b27527866828c94353120941b6020b1d"
+                                               "be75ffd7b22b7ee2b7a57e8e89007f06eee43b7b8fceb382f8a6e78b812ed43"
+                                               "7f9";
+static const gchar firmware_public_key_hex[] = "04083cb5e7ece3a8ffa2b6d2d52e2c1721f7d8de6eaaca7fad08267e289e97ec"
+                                               "a18f3bf8afe57e528b6ad07023df442621c4ad8294816d12852339848eb1196d"
+                                               "16";
 static const gchar firmware_hash_hex[]       = "c3bf47ea1f4a4a605470313cacb3a44f4a461f68c6faeab07e737610cb5ac835";
-static const gchar model_signature_hex[]     = "febe6ba3107813e185f05189e69ae79d9f7a40802582d94324459844c8b97ec6"
-                                               "c5daed5462276cb8a193c33e350424b0305d63d79a93a9188dcfc0cb5595f6c1";
-static const gchar device_signature_hex[]    = "10cc57dd8dafb463510a7327a5fca49b698e999b36448e2023eaf0dff0b0d4a3"
-                                               "4f1caf4e872b77364a0a00d7476554d0324c4cc931937e232a0315837d696c06";
 
-/* expected application_secret based on above */
-
-static const gchar application_secret_hex[] = "13330ba3135ecf5dc71cede01a886540771efab35c8ba053902b2c1ee7de6efe";
+/*
+ * model_signature_hex: Sign(sk_m, SHA256(pk_d))
+ * device_signature_hex: Sign(sk_d, SHA256(C001 || h_f || pk_f))
+ *
+ * Both taken directly from the SDCP reference test run output; verified to
+ * check out against the model certificate's pk_m key already in our truststore.
+ * See: https://github.com/Microsoft/SecureDeviceConnectionProtocol/blob/fe82ea1/README.md
+ */
+static const gchar model_signature_hex[]     = "e9782b0e27729276810f3f1a5dfeaa5852e817e1a5cf1cadf20afbc7fc64b282"
+                                               "a8371b36cb975c9b3bce16c92a40308b3651fccfb6fdca0dd3c850c22109b23f";
+static const gchar device_signature_hex[]    = "fd914d22d2fcb199a4d988d091d3ab9b1d50863dd4f118218045ccd3fa6609fa"
+                                               "f11c6d0290ade334d0f5c954241828bc3723c015a4f4adcb2aede261f347fbfa";
 
 /* enrollment nonce used by the virtual driver for the first enrolled print */
+/* regenerate with: openssl rand -hex 32 */
 
 static const gchar enrollment_nonce_hex[] = "c2101c44c9a667bba397e81f48b143398603e2c9335a68b409e1dbe71e005ca2";
 
 /* identify nonce used by the virtual driver for identify operations */
+/* regenerate with: openssl rand -hex 32 */
 
 static const gchar identify_nonce_hex[] = "3a1b506f5bec089059acefb9b44dfbdea7a599ee9aa267e5252664d60b798053";
