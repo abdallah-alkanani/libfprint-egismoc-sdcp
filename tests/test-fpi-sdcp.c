@@ -438,6 +438,131 @@ test_sdcp_mac_wrong_data (void)
   g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
 }
 
+/*
+ * Tests the full SDCP key derivation chain:
+ *   ECDH(sk_h, pk_f) -> key_agreement
+ *   KBKDF(key_agreement, "master secret", r_h||r_d, 32) -> master_secret
+ *   KBKDF(master_secret, "application keys", NULL, 64) -> s (first 32) + k (last 32)
+ *
+ * All expected values were derived using the test key material below
+ * and verified with openssl command line.
+ *
+ * Reproduce with openssl (label hex: "master secret"=6d617374657220736563726574,
+ * "application keys"=6170706c69636174696f6e206b657973):
+ *
+ *   SK_H=8400ed14579cdf11586477e836e8cb52708441c1c2a447c218c5bbc2d118fbc7
+ *   R_H=d877403abe82f4d97e1448c5052d83a532a45e56ef049cbbf981137520e713bf
+ *   R_D=353eb43ffb422fc96c857140d5c399d588feef46f62bd363b97c823975bb27e7
+ *   KEY_AGREEMENT=10babb6a23f0c8041ece41c18af1f6aaf9d1e311aedb2afc18bc72c8b05995d7
+ *
+ *   master_secret:
+ *     openssl kdf -keylen 32 -kdfopt mode:counter -kdfopt mac:HMAC \
+ *       -kdfopt digest:SHA2-256 -kdfopt hexkey:$KEY_AGREEMENT \
+ *       -kdfopt hexsalt:6d617374657220736563726574 \
+ *       -kdfopt hexinfo:${R_H}${R_D} KBKDF
+ *
+ *   application_keys (s = first 32 bytes, k = last 32 bytes):
+ *     openssl kdf -keylen 64 -kdfopt mode:counter -kdfopt mac:HMAC \
+ *       -kdfopt digest:SHA2-256 -kdfopt hexkey:<master_secret> \
+ *       -kdfopt hexsalt:6170706c69636174696f6e206b657973 KBKDF
+ *
+ * Note: the Microsoft SDCP README ships example ms/s/k values that seem to be
+ * inconsistent (maybe printed from different test runs?).
+ */
+static void
+test_sdcp_key_derivation (void)
+{
+  g_autoptr(GBytes) sk_h = NULL;
+  g_autoptr(GBytes) pk_f = NULL;
+  g_autoptr(GBytes) key_agreement = NULL;
+  g_autoptr(GBytes) expected_key_agreement = NULL;
+  g_autoptr(GBytes) r_h = NULL;
+  g_autoptr(GBytes) r_d = NULL;
+  g_autoptr(GBytes) master_secret = NULL;
+  g_autoptr(GBytes) expected_master_secret = NULL;
+  g_autoptr(GBytes) app_keys = NULL;
+  g_autoptr(GBytes) expected_s = NULL;
+  g_autoptr(GBytes) expected_k = NULL;
+  g_autoptr(GError) error = NULL;
+
+  /* firmware public key and device random based on the SDCP reference test run.
+   * See: https://github.com/Microsoft/SecureDeviceConnectionProtocol/blob/fe82ea1/README.md
+   */
+  static const gchar pk_f_hex[] =
+    "04083cb5e7ece3a8ffa2b6d2d52e2c1721f7d8de6eaaca7fad08267e289e97ec"
+    "a18f3bf8afe57e528b6ad07023df442621c4ad8294816d12852339848eb1196d"
+    "16";
+  static const gchar r_d_hex[] =
+    "353eb43ffb422fc96c857140d5c399d588feef46f62bd363b97c823975bb27e7";
+
+  /* Step 1: ECDH(sk_h, pk_f) */
+  sk_h = g_bytes_from_hex (host_private_key_hex);
+  pk_f = g_bytes_from_hex (pk_f_hex);
+
+  static const gchar expected_key_agreement_hex[] =
+    "10babb6a23f0c8041ece41c18af1f6aaf9d1e311aedb2afc18bc72c8b05995d7";
+
+  key_agreement = fpi_sdcp_key_agreement (sk_h, pk_f, &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (key_agreement);
+  g_assert_cmpuint (g_bytes_get_size (key_agreement), ==, 32);
+
+  expected_key_agreement = g_bytes_from_hex (expected_key_agreement_hex);
+  g_assert_cmpmem (g_bytes_get_data (expected_key_agreement, NULL),
+                   g_bytes_get_size (expected_key_agreement),
+                   g_bytes_get_data (key_agreement, NULL),
+                   g_bytes_get_size (key_agreement));
+
+  /* Step 2: KBKDF(key_agreement, "master secret", r_h || r_d, 32) */
+  r_h = g_bytes_from_hex (host_random_hex);
+  r_d = g_bytes_from_hex (r_d_hex);
+
+  static const gchar expected_master_secret_hex[] =
+    "a03cfaac987eba1184a60286560d4840f93841283e38c7f5ed51e1feaac6d791";
+
+  master_secret = fpi_sdcp_kdf (key_agreement,
+                                FPI_SDCP_DEFAULT_LABEL_MASTER_SECRET,
+                                r_h, r_d,
+                                FPI_SDCP_APPLICATION_SECRET_SIZE,
+                                &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (master_secret);
+
+  expected_master_secret = g_bytes_from_hex (expected_master_secret_hex);
+  g_assert_cmpmem (g_bytes_get_data (expected_master_secret, NULL),
+                   g_bytes_get_size (expected_master_secret),
+                   g_bytes_get_data (master_secret, NULL),
+                   g_bytes_get_size (master_secret));
+
+  /* Step 3: KBKDF(master_secret, "application keys", NULL, 64) -> s + k */
+  static const gchar expected_s_hex[] =
+    "81cbe5d02ad5185b2296a10a6f951b12cdb580e4cf7db4ed7207a17d62a364f6";
+  static const gchar expected_application_key_k_hex[] =
+    "af72d32f17ca8d1a7ae6755881fd5e742f1c0ad1ce8f0e9d60cc61949c3fc1e3";
+
+  app_keys = fpi_sdcp_kdf (master_secret,
+                           FPI_SDCP_DEFAULT_LABEL_APPLICATION_KEYS,
+                           NULL, NULL,
+                           2 * FPI_SDCP_APPLICATION_SECRET_SIZE,
+                           &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (app_keys);
+  g_assert_cmpuint (g_bytes_get_size (app_keys), ==, 2 * FPI_SDCP_APPLICATION_SECRET_SIZE);
+
+  const guint8 *app_keys_data = g_bytes_get_data (app_keys, NULL);
+
+  /* First 32 bytes == s (application secret) */
+  expected_s = g_bytes_from_hex (expected_s_hex);
+  g_assert_cmpmem (g_bytes_get_data (expected_s, NULL), FPI_SDCP_APPLICATION_SECRET_SIZE,
+                   app_keys_data, FPI_SDCP_APPLICATION_SECRET_SIZE);
+
+  /* Last 32 bytes == k (encryption key) */
+  expected_k = g_bytes_from_hex (expected_application_key_k_hex);
+  g_assert_cmpmem (g_bytes_get_data (expected_k, NULL), FPI_SDCP_APPLICATION_SECRET_SIZE,
+                   app_keys_data + FPI_SDCP_APPLICATION_SECRET_SIZE,
+                   FPI_SDCP_APPLICATION_SECRET_SIZE);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -445,6 +570,7 @@ main (int argc, char *argv[])
 
   g_test_add_func ("/sdcp/generate_host_key", test_generate_host_key);
   g_test_add_func ("/sdcp/generate_random", test_generate_random);
+  g_test_add_func ("/sdcp/key_derivation", test_sdcp_key_derivation);
   g_test_add_func ("/sdcp/verify_connect", test_verify_connect);
   g_test_add_func ("/sdcp/verify_reconnect", test_verify_reconnect);
   g_test_add_func ("/sdcp/verify_identify", test_verify_identify);
