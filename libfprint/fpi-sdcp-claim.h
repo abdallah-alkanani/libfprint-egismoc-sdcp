@@ -22,6 +22,7 @@
 #pragma once
 
 #include <glib-object.h>
+#include "tod/tod-macros.h"
 
 /**
  * FpiSdcpClaim:
@@ -74,6 +75,10 @@ struct _FpiSdcpClaim
   GBytes     *firmware_hash;       /* h_f    */
   GBytes     *model_signature;     /* s_m    */
   GBytes     *device_signature;    /* s_d    */
+
+  /*< private >*/
+  /* padding for future expansion */
+  TOD_PADDING_ALIGNED (16, 0);
 };
 
 GType          fpi_sdcp_claim_get_type (void) G_GNUC_CONST;
