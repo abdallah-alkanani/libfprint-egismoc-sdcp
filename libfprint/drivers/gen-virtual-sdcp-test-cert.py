@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
 )
 import datetime
 import pathlib
+import sys
 
 # ---------------------------------------------------------------------------
 # Fixed test root CA key material (P-256, generated once for reproducibility)
@@ -189,10 +190,15 @@ here       = pathlib.Path(__file__).resolve().parent          # libfprint/driver
 truststore = here.parent / "sdcp" / "truststore"
 
 root_ca_pem_path = truststore / f"{ROOT_CA_CN}.pem"
-root_ca_pem_path.write_text(
-    root_ca_cert.public_bytes(serialization.Encoding.PEM).decode()
-)
-print(f"Root CA PEM written to: {root_ca_pem_path.relative_to(here.parent.parent)}")
+force_root_ca_regenerate = "--force-recreate-root-ca" in sys.argv
+
+if root_ca_pem_path.exists() and not force_root_ca_regenerate:
+    print(f"Root CA PEM already exists, not overwriting")
+else:
+    root_ca_pem_path.write_text(
+        root_ca_cert.public_bytes(serialization.Encoding.PEM).decode()
+    )
+    print(f"Root CA PEM written to: {root_ca_pem_path.relative_to(here.parent.parent)}")
 
 old_model_ca = truststore / "SDCP Virtual Test Model CA.pem"
 if old_model_ca.exists():
