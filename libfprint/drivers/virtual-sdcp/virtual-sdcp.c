@@ -36,9 +36,10 @@
 #define FP_COMPONENT "virtual_sdcp"
 #include "fpi-log.h"
 
-#include "../fpi-sdcp.h"
-#include "../fpi-sdcp-claim.h"
-#include "../fp-sdcp-device-private.h"
+#include "fpi-sdcp.h"
+#include "fpi-sdcp-claim.h"
+#include "fp-sdcp-device-private.h"
+
 #include "virtual-sdcp.h"
 
 struct _FpDeviceVirtualSdcp

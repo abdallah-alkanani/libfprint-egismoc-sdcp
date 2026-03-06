@@ -25,7 +25,7 @@
 #include "fpi-sdcp-device.h"
 
 /* We can re-use the device test payloads from virtual-sdcp */
-#include "drivers/virtual-sdcp.h"
+#include "drivers/virtual-sdcp/virtual-sdcp.h"
 
 /*
  * Fixed host key material used for the deterministic key exchange test.

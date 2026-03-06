@@ -147,7 +147,7 @@ driver_sources = {
     'virtual_device_storage' :
         [ 'drivers/virtual-device-storage.c' ],
     'virtual_sdcp' :
-        [ 'drivers/virtual-sdcp.c' ],
+        [ 'drivers/virtual-sdcp/virtual-sdcp.c' ],
     'synaptics' :
         [ 'drivers/synaptics/synaptics.c', 'drivers/synaptics/bmkt_message.c' ],
     'goodixmoc' :
