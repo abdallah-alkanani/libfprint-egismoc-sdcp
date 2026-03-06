@@ -96,6 +96,8 @@ gobject_dep = dependency('gobject-2.0', version: '>=' + glib_min_version)
 gusb_dep = dependency('gusb', version: '>= 0.2.0')
 mathlib_dep = cc.find_library('m', required: false)
 
+python3 = find_program('python3')
+
 # The following dependencies are only used for tests
 sh = find_program('sh', required: true)
 cairo_dep = dependency('cairo', required: false)

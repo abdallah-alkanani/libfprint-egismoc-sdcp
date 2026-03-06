@@ -26,8 +26,6 @@ envs.set('FP_PRINTS_PATH', meson.project_source_root() / 'examples' / 'prints')
 
 envs.set('NO_AT_BRIDGE', '1')
 
-python3 = find_program('python3')
-
 installed_tests = get_option('installed-tests')
 installed_tests_execdir = libexecdir / 'installed-tests' / versioned_libname
 installed_tests_testdir = datadir / 'installed-tests' / versioned_libname
