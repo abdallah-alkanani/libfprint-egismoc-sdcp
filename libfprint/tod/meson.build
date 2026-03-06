@@ -41,7 +41,7 @@ foreach source: libfprint_private_sources
 endforeach
 
 if 'sdcp' in driver_helpers
-    tod_sources += sdcp_truststore_resource_c
+    tod_sources += sdcp_truststore_resource
 endif
 
 tod_symbols = files('tod-symbols.h')[0]

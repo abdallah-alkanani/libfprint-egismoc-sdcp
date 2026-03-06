@@ -317,7 +317,6 @@ fpi_sdcp_build_truststore (GResource *additional_trust_store,
       goto out;
     }
 
-  fpi_sdcp_truststore_register_resource ();
   default_resource = fpi_sdcp_truststore_get_resource ();
 
   if (!fpi_sdcp_load_trustcerts_from_resource (truststore,
