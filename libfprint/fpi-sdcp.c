@@ -895,6 +895,17 @@ fpi_sdcp_generate_random (GError **error)
 {
   guint8 *random = g_malloc0 (FPI_SDCP_RANDOM_SIZE);
 
+  if (fpi_device_emulation_mode_enabled (NULL) &&
+      g_strcmp0 (g_getenv ("FP_SDCP_FIXED_RANDOM"), "1") == 0)
+    {
+      /* For testing purposes, use a fixed random. */
+      memset (random, 0x53, FPI_SDCP_RANDOM_SIZE);
+      fp_dbg ("Using fixed random value for SDCP:");
+      fp_dbg_hex_dump_bytes (random, FPI_SDCP_RANDOM_SIZE);
+
+      return fpi_sdcp_bytes_new_secure_take (random, FPI_SDCP_RANDOM_SIZE);
+    }
+
   if (!RAND_bytes (random, FPI_SDCP_RANDOM_SIZE))
     {
       g_propagate_error (error,

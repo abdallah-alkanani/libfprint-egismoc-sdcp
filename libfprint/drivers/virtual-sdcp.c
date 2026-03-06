@@ -306,6 +306,12 @@ allow_expired_certificate (void)
   return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_ALLOW_EXPIRED_CERTIFICATE"), "1") == 0;
 }
 
+static inline gboolean
+use_deterministic_random (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_DETERMINISTIC"), "1") == 0;
+}
+
 /*
  * Perform device-side key exchange and derive the application secret.
  * Equivalent to ECDH(sk_f, pk_h) + KBKDF with host_random and device_random,
@@ -368,7 +374,16 @@ dev_connect (FpSdcpDevice *sdcp_device)
   g_assert (host_public_key);
   g_assert (g_bytes_get_size (host_public_key) == FPI_SDCP_PUBLIC_KEY_SIZE);
 
-  device_random = g_bytes_from_hex (device_random_hex);
+  /* Use the fixed device_random_hex in deterministic mode, otherwise generate a fresh one */
+  if (use_deterministic_random ())
+    {
+      device_random = g_bytes_from_hex (device_random_hex);
+    }
+  else if (!(device_random = fpi_sdcp_generate_random (&error)))
+    {
+      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL, error);
+      return;
+    }
 
   /*
    * Device-side key exchange: ECDH(sk_f, pk_h) + KDF -> application_secret.
