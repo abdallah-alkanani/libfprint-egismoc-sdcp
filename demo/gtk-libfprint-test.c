@@ -563,7 +563,7 @@ main (int argc, char **argv)
 
   app = GTK_APPLICATION (g_object_new (libfprint_demo_get_type (),
                                        "application-id", "org.freedesktop.libfprint.Demo",
-                                       "flags", G_APPLICATION_FLAGS_NONE,
+                                       "flags", G_APPLICATION_DEFAULT_FLAGS,
                                        NULL));
 
   return g_application_run (G_APPLICATION (app), 0, NULL);
