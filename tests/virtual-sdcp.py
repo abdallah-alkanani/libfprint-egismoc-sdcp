@@ -75,6 +75,10 @@ class VirtualSDCPBase(unittest.TestCase):
     def use_untrusted_certificate(self):
         self.set_env('FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE')
 
+    def use_deterministic_random(self):
+        self.set_env('FP_VIRTUAL_SDCP_DETERMINISTIC')
+        self.set_env('FP_SDCP_FIXED_RANDOM')
+
     def disable_device_emulation(self):
         self.remove_env('FP_DEVICE_EMULATION')
 
@@ -90,6 +94,14 @@ class VirtualSDCPOpen(VirtualSDCPBase):
         self.allow_expired_certificate()
 
         self.dev.open_sync()
+
+
+class VirtualSDCPOpenDeterministic(VirtualSDCPOpen):
+    """Run the same VirtualSDCPOpen tests with FP_VIRTUAL_SDCP_DETERMINISTIC=1."""
+
+    def setUp(self):
+        self.use_deterministic_random()
+        super().setUp()
 
 
 class VirtualSDCPOpenFailures(VirtualSDCPBase):
@@ -119,6 +131,14 @@ class VirtualSDCPOpenFailures(VirtualSDCPBase):
             self.dev.open_sync()
         self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
                                                 FPrint.DeviceError.UNTRUSTED))
+
+
+class VirtualSDCPOpenFailuresDeterministic(VirtualSDCPOpenFailures):
+    """Run the same VirtualSDCPOpenFailures tests with FP_VIRTUAL_SDCP_DETERMINISTIC=1."""
+
+    def setUp(self):
+        self.use_deterministic_random()
+        super().setUp()
 
 class VirtualSDCPOpenedBase(VirtualSDCPBase):
 
@@ -205,6 +225,14 @@ class VirtualSDCP(VirtualSDCPOpenedBase):
 
         # Ensure the second print from list is the same as new_print2
         self.assertTrue(prints[1].equal(new_print2))
+
+class VirtualSDCPDeterministic(VirtualSDCP):
+    """Run the same VirtualSDCP tests with FP_VIRTUAL_SDCP_DETERMINISTIC=1."""
+
+    def setUp(self):
+        self.use_deterministic_random()
+        super().setUp()
+
 
 class VirtualSDCPNoReconnect(VirtualSDCPOpenedBase):
 
