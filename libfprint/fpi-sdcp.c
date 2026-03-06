@@ -37,8 +37,6 @@
 #include <openssl/x509.h>
 
 #define SDCP_KEY_AGREEMENT_SIZE 32
-#define SDCP_MASTER_SECRET_SIZE 32
-#define SDCP_APPLICATION_KEYS_SIZE 64
 
 #define SDCP_DEVICE_SIGNATURE_HEADER "\xC0\x01"
 
@@ -952,7 +950,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                                 claim->master_secret_label :
                                 FPI_SDCP_DEFAULT_LABEL_MASTER_SECRET,
                                 host_random, device_random,
-                                SDCP_MASTER_SECRET_SIZE, error);
+                                FPI_SDCP_MASTER_SECRET_SIZE, error);
   if (!master_secret)
     goto out_error;
 
@@ -966,7 +964,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                                    claim->application_keys_label :
                                    FPI_SDCP_DEFAULT_LABEL_APPLICATION_KEYS,
                                    NULL, NULL,
-                                   SDCP_APPLICATION_KEYS_SIZE, error);
+                                   FPI_SDCP_APPLICATION_KEYS_SIZE, error);
   if (!application_keys)
     goto out_error;
 
