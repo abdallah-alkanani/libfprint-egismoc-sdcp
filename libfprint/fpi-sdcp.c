@@ -363,21 +363,38 @@ fpi_sdcp_get_truststore (GResource *additional_trust_store,
   return default_truststore;
 }
 
-static gboolean
-fpi_sdcp_verify_x509_certificate (X509                          *certificate,
+static X509 *
+fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificate,
                                   GResource                     *additional_trust_store,
                                   FpiDeviceSdcpVerificationFlags verification_flags,
                                   GError                       **error)
 {
   X509_STORE *sdcp_truststore = NULL;
   X509_STORE_CTX *ctx = NULL;
+  const guint8 *cert_ptr;
+  X509 *cert;
+  gsize cert_len;
+
+  g_return_val_if_fail (x509_certificate != NULL, NULL);
+
+  cert_ptr = g_bytes_get_data (x509_certificate, &cert_len);
+  cert = d2i_X509 (NULL, &cert_ptr, cert_len);
+  if (!cert)
+    {
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "Error parsing model certificate"));
+      return NULL;
+    }
+
+  print_certificate (cert);
 
   if (!(sdcp_truststore = fpi_sdcp_get_truststore (additional_trust_store, error)))
     goto out;
 
   ctx = X509_STORE_CTX_new ();
 
-  if (!X509_STORE_CTX_init (ctx, sdcp_truststore, certificate, NULL))
+  if (!X509_STORE_CTX_init (ctx, sdcp_truststore, cert, NULL))
     goto out_verify_error;
 
   if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME)
@@ -413,7 +430,7 @@ fpi_sdcp_verify_x509_certificate (X509                          *certificate,
   X509_STORE_CTX_free (ctx);
   g_clear_pointer (&sdcp_truststore, X509_STORE_free);
 
-  return TRUE;
+  return cert;
 
 out_error:
   g_propagate_error (error,
@@ -430,7 +447,8 @@ out_verify_error:
 out:
   g_clear_pointer (&ctx, X509_STORE_CTX_free);
   g_clear_pointer (&sdcp_truststore, X509_STORE_free);
-  return FALSE;
+  X509_free (cert);
+  return NULL;
 }
 
 gboolean
@@ -439,29 +457,16 @@ fpi_sdcp_verify_certificate (GBytes                        *x509_certificate,
                              FpiDeviceSdcpVerificationFlags verification_flags,
                              GError                       **error)
 {
-  const guint8 *cert_ptr;
-  gsize cert_len;
-  X509 *x509;
-  gboolean ok;
+  X509 *x509 = fpi_sdcp_verify_x509_certificate (x509_certificate,
+                                                 additional_trust_store,
+                                                 verification_flags,
+                                                 error);
 
-  g_return_val_if_fail (x509_certificate != NULL, FALSE);
-
-  cert_ptr = g_bytes_get_data (x509_certificate, &cert_len);
-  x509 = d2i_X509 (NULL, &cert_ptr, cert_len);
   if (!x509)
-    {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                   "Error parsing model certificate"));
-      return FALSE;
-    }
-
-  print_certificate (x509);
-
-  ok = fpi_sdcp_verify_x509_certificate (x509, additional_trust_store, verification_flags, error);
+    return FALSE;
 
   X509_free (x509);
-  return ok;
+  return TRUE;
 }
 
 GBytes *
@@ -943,8 +948,6 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   g_return_val_if_fail (application_secret != NULL, FALSE);
   g_return_val_if_fail (*application_secret == NULL, FALSE);
 
-  const guint8 *cert_ptr;
-  gsize cert_len = 0;
   X509 *cert = NULL;
   EVP_PKEY *cert_public_pkey = NULL;
   EVP_PKEY *device_public_pkey = NULL;
@@ -1042,21 +1045,12 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
   if (!(verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES))
     {
-      /* Validate the certificate */
-
-      cert_ptr = g_bytes_get_data (claim->model_certificate, &cert_len);
-      cert = d2i_X509 (NULL, &cert_ptr, cert_len);
+      /* Parse and Validate the certificate */
+      cert = fpi_sdcp_verify_x509_certificate (claim->model_certificate,
+                                               additional_trust_store,
+                                               verification_flags,
+                                               error);
       if (!cert)
-        {
-          g_propagate_error (error,
-                             fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                       "Error parsing model certificate"));
-          goto out;
-        }
-
-      print_certificate (cert);
-
-      if (!fpi_sdcp_verify_x509_certificate (cert, additional_trust_store, verification_flags, error))
         {
           fp_dbg ("SDCP model certificate verification failed");
           goto out;
