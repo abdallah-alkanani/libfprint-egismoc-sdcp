@@ -1,3 +1,6 @@
+# Enumerate all PEM certificate files in the truststore directory,
+# including their modification time so downstream targets re-run only
+# when a file is actually added, removed, or modified.
 sdcp_trust_store_pem_files = custom_target('pem-files',
     command: [
         find_program('find'),
@@ -5,15 +8,16 @@ sdcp_trust_store_pem_files = custom_target('pem-files',
         '-type', 'f',
         '-maxdepth', '1',
         '-name', '*.pem',
+        '-printf', '%T@ %p\n',
     ],
     output: 'pem-files.list',
     capture: true,
     build_always_stale: true,
 )
 
-sdcp_truststore_gresource_xml = custom_target('sdcp-truststore.gresource',
+sdcp_truststore_gresource_xml = custom_target('truststore-gresource-xml',
     input : files('generate-gresource.py'),
-    output : 'sdcp-truststore.gresource.xml',
+    output : 'truststore.gresource.xml',
     command : [
         python3,
         '@INPUT@',
