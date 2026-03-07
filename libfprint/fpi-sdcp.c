@@ -1053,6 +1053,10 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                          FpiDeviceSdcpVerificationFlags verification_flags,
                          GError                       **error)
 {
+  g_autoptr(X509) cert = NULL;
+  g_autoptr(EVP_PKEY) cert_public_pkey = NULL;
+  g_autoptr(EVP_PKEY) device_public_pkey = NULL;
+  g_autoptr(GError) local_error = NULL;
   g_autoptr(GBytes) claim_hash = NULL;
   g_autoptr(GBytes) claim_mac = NULL;
   g_autoptr(GBytes) key_agreement = NULL;
@@ -1159,91 +1163,92 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   /* SDCP Connect: 5.v. Unpack the claim (SKIP; already done) */
   /* SDCP Connect: 5.vi. Verify the claim */
 
-  if (!(verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES))
+  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES)
     {
-      g_autoptr(X509) cert = NULL;
-
-      /* Parse and Validate the certificate */
-      cert = fpi_sdcp_verify_x509_certificate (claim->model_certificate,
-                                               additional_trust_store,
-                                               verification_flags,
-                                               error);
-      if (!cert)
-        {
-          fp_dbg ("SDCP model certificate verification failed");
-          return NULL;
-        }
-
-      fp_dbg ("SDCP model certificate verified successfully");
-
-      if (!(verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES))
-        {
-          g_autoptr(EVP_PKEY) cert_public_pkey = NULL;
-          g_autoptr(EVP_PKEY) device_public_pkey = NULL;
-          g_autoptr(GError) local_error = NULL;
-          /* Get the certificate's public key */
-
-          if (!(cert_public_pkey = X509_get_pubkey (cert)))
-            {
-              g_propagate_error (error,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                           "Error getting public key from "
-                                                           "model certificate"));
-              print_openssl_errors ();
-              return NULL;
-            }
-
-          /* Verify(pk_m, H(pk_d), s_m) */
-
-          fp_dbg ("model_signature:");
-          fp_dbg_hex_dump_gbytes (claim->model_signature);
-
-          if (!fpi_sdcp_verify_signature (cert_public_pkey,
-                                          NULL,
-                                          claim->device_public_key,
-                                          NULL,
-                                          claim->model_signature,
-                                          &local_error))
-            {
-              g_propagate_prefixed_error (error, g_steal_pointer (&local_error),
-                                          "SDCP model signature verification failed: ");
-              return NULL;
-            }
-
-          fp_dbg ("SDCP model signature verified successfully");
-
-          /* Verify(pk_d, H(C001||h_f||pk_f), s_d) */
-
-          fp_dbg ("device_public_key:");
-          fp_dbg_hex_dump_gbytes (claim->device_public_key);
-
-          fp_dbg ("firmware_hash:");
-          fp_dbg_hex_dump_gbytes (claim->firmware_hash);
-
-          fp_dbg ("firmware_public_key:");
-          fp_dbg_hex_dump_gbytes (claim->firmware_public_key);
-
-          fp_dbg ("device_signature:");
-          fp_dbg_hex_dump_gbytes (claim->device_signature);
-
-          if (!(device_public_pkey = fpi_sdcp_get_public_pkey (claim->device_public_key, error)))
-            return NULL;
-
-          if (!fpi_sdcp_verify_signature (device_public_pkey,
-                                          SDCP_DEVICE_SIGNATURE_HEADER,
-                                          claim->firmware_hash,
-                                          claim->firmware_public_key,
-                                          claim->device_signature,
-                                          &local_error))
-            {
-              g_propagate_prefixed_error (error, g_steal_pointer (&local_error),
-                                          "SDCP device signature verification failed: ");
-              return NULL;
-            }
-
-          fp_dbg ("SDCP device signature verified successfully");
-        }
+      fp_dbg ("SDCP model certificate verification ignored");
+      return g_steal_pointer (&out_app_secret);
     }
+
+  /* Parse and Validate the certificate */
+  cert = fpi_sdcp_verify_x509_certificate (claim->model_certificate,
+                                            additional_trust_store,
+                                            verification_flags,
+                                            error);
+  if (!cert)
+    {
+      fp_dbg ("SDCP model certificate verification failed");
+      return NULL;
+    }
+
+  fp_dbg ("SDCP model certificate verified successfully");
+
+  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES)
+    {
+      fp_dbg ("SDCP signatures verification ignored");
+      return g_steal_pointer (&out_app_secret);
+    }
+
+  /* Get the certificate's public key */
+
+  if (!(cert_public_pkey = X509_get_pubkey (cert)))
+    {
+      g_propagate_error (error,
+                          fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                    "Error getting public key from "
+                                                    "model certificate"));
+      print_openssl_errors ();
+      return NULL;
+    }
+
+  /* Verify(pk_m, H(pk_d), s_m) */
+
+  fp_dbg ("model_signature:");
+  fp_dbg_hex_dump_gbytes (claim->model_signature);
+
+  if (!fpi_sdcp_verify_signature (cert_public_pkey,
+                                  NULL,
+                                  claim->device_public_key,
+                                  NULL,
+                                  claim->model_signature,
+                                  &local_error))
+    {
+      g_propagate_prefixed_error (error, g_steal_pointer (&local_error),
+                                  "SDCP model signature verification failed: ");
+      return NULL;
+    }
+
+  fp_dbg ("SDCP model signature verified successfully");
+
+  /* Verify(pk_d, H(C001||h_f||pk_f), s_d) */
+
+  fp_dbg ("device_public_key:");
+  fp_dbg_hex_dump_gbytes (claim->device_public_key);
+
+  fp_dbg ("firmware_hash:");
+  fp_dbg_hex_dump_gbytes (claim->firmware_hash);
+
+  fp_dbg ("firmware_public_key:");
+  fp_dbg_hex_dump_gbytes (claim->firmware_public_key);
+
+  fp_dbg ("device_signature:");
+  fp_dbg_hex_dump_gbytes (claim->device_signature);
+
+  if (!(device_public_pkey = fpi_sdcp_get_public_pkey (claim->device_public_key, error)))
+    return NULL;
+
+  if (!fpi_sdcp_verify_signature (device_public_pkey,
+                                  SDCP_DEVICE_SIGNATURE_HEADER,
+                                  claim->firmware_hash,
+                                  claim->firmware_public_key,
+                                  claim->device_signature,
+                                  &local_error))
+    {
+      g_propagate_prefixed_error (error, g_steal_pointer (&local_error),
+                                  "SDCP device signature verification failed: ");
+      return NULL;
+    }
+
+  fp_dbg ("SDCP device signature verified successfully");
 
   return g_steal_pointer (&out_app_secret);
 }
