@@ -131,7 +131,8 @@ fpi_openssl_free_wrapper (void *ptr)
 /* Convert a raw 64-byte IEEE P1363 ECDSA signature (r||s) to DER, which is
  * what OpenSSL's EVP_DigestVerifyFinal() requires for EC keys. */
 static GBytes *
-raw_ecdsa_sig_to_der (GBytes *raw_sig)
+raw_ecdsa_sig_to_der (GBytes  *raw_sig,
+                      GError **error)
 {
   g_autoptr(ECDSA_SIG) sig = NULL;
   g_autoptr(BIGNUM) r = NULL;
@@ -144,19 +145,49 @@ raw_ecdsa_sig_to_der (GBytes *raw_sig)
   data = g_bytes_get_data (raw_sig, &len);
 
   if (len != FPI_SDCP_SIGNATURE_SIZE)
-    return NULL;
+    {
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "Invalid ECDSA signature size: "
+                                                   "expected %d bytes, got %zu",
+                                                   FPI_SDCP_SIGNATURE_SIZE, len));
+      return NULL;
+    }
 
   sig = ECDSA_SIG_new ();
   if (!sig)
-    return NULL;
+    {
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "OpenSSL error allocating ECDSA signature"));
+      print_openssl_errors ();
+      return NULL;
+    }
 
   r = BN_bin2bn (data, FPI_SDCP_SIGNATURE_SIZE / 2, NULL);
   s = BN_bin2bn (data + FPI_SDCP_SIGNATURE_SIZE / 2,
                  FPI_SDCP_SIGNATURE_SIZE / 2, NULL);
 
+  if (!r || !s)
+    {
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "OpenSSL error parsing ECDSA signature "
+                                                   "components (r, s)"));
+      print_openssl_errors ();
+      return NULL;
+    }
+
   /* ECDSA_SIG_set0 takes ownership of r and s on success */
-  if (!r || !s || !ECDSA_SIG_set0 (sig, r, s))
-    return NULL;
+  if (!ECDSA_SIG_set0 (sig, r, s))
+    {
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "OpenSSL error setting ECDSA signature "
+                                                   "components (r, s)"));
+      print_openssl_errors ();
+      return NULL;
+    }
 
   /* ECDSA_SIG now owns r and s; steal to prevent autoptr double-free */
   g_steal_pointer (&r);
@@ -166,7 +197,14 @@ raw_ecdsa_sig_to_der (GBytes *raw_sig)
   der_len = i2d_ECDSA_SIG (sig, &der);
 
   if (der_len <= 0)
-    return NULL;
+    {
+      g_propagate_error (error,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                   "OpenSSL error encoding ECDSA signature "
+                                                   "to DER"));
+      print_openssl_errors ();
+      return NULL;
+    }
 
   return g_bytes_new_with_free_func (der, der_len, fpi_openssl_free_wrapper, der);
 }
@@ -184,15 +222,10 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
   int verify_result;
 
   /* SDCP signatures are raw 64-byte (r||s); convert to DER for OpenSSL */
-  der_sig = raw_ecdsa_sig_to_der (signature);
+  der_sig = raw_ecdsa_sig_to_der (signature, error);
   if (!der_sig)
     {
-      g_propagate_error (error,
-                         fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                   "Failed to convert raw ECDSA signature to DER "
-                                                   "for label '%s'",
-                                                   label));
-      print_openssl_errors ();
+      g_prefix_error (error, "Failed to convert signature for label '%s': ", label);
       return FALSE;
     }
 
