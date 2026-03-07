@@ -157,7 +157,7 @@ struct _FpSdcpDeviceClass
 
   /*< private >*/
   /* padding for future expansion */
-  TOD_PADDING_ALIGNED (32, 0);
+  TOD_PADDING_ALIGNED (32, sizeof (GResource * (*)(FpSdcpDevice *)));
 };
 
 void fpi_sdcp_device_open_complete (FpSdcpDevice *self,

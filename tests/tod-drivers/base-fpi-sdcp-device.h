@@ -84,3 +84,27 @@ struct _FpSdcpDeviceClassTODV1_95_0
 };
 
 typedef struct _FpSdcpDeviceClassTODV1_95_0 FpSdcpDeviceClassTODV1_95_0;
+
+struct _FpSdcpDeviceClassTODV1_95_1
+{
+  FpDeviceClass                            parent_class;
+
+  FpiDeviceSdcpVerificationFlagsTODV1_95_0 verification_flags;
+
+  void                                     (*open)            (FpSdcpDevice *sdcp_device);
+  void                                     (*connect)         (FpSdcpDevice *sdcp_device);
+  void                                     (*reconnect)       (FpSdcpDevice *sdcp_device);
+  void                                     (*list)            (FpSdcpDevice *sdcp_device);
+  void                                     (*enroll)          (FpSdcpDevice *sdcp_device);
+  void                                     (*enroll_commit)   (FpSdcpDevice *sdcp_device,
+                                                               GBytes       *id);
+  void                                     (*identify)        (FpSdcpDevice *sdcp_device);
+
+  GResource                              * (*get_trust_store) (FpSdcpDevice *sdcp_device);
+
+  /*< private >*/
+  /* padding for future expansion */
+  TOD_PADDING_ALIGNED (32, sizeof (GResource * (*)(FpSdcpDevice *)));
+};
+
+typedef struct _FpSdcpDeviceClassTODV1_95_1 FpSdcpDeviceClassTODV1_95_1;
