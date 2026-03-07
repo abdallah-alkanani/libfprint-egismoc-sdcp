@@ -64,7 +64,7 @@ static const guint8 from_hex_map[] = {
 };
 
 static GBytes *
-g_bytes_from_hex (const gchar *hex)
+bytes_from_hex (const gchar *hex)
 {
   g_autoptr(GBytes) res = NULL;
   guint8 b0, b1;
@@ -88,12 +88,12 @@ get_fake_sdcp_claim (const gchar *certificate_hex)
 {
   FpiSdcpClaim *claim = g_new0 (FpiSdcpClaim, 1);
 
-  claim->model_certificate = g_bytes_from_hex (certificate_hex);
-  claim->device_public_key = g_bytes_from_hex (device_public_key_hex);
-  claim->firmware_public_key = g_bytes_from_hex (firmware_public_key_hex);
-  claim->firmware_hash = g_bytes_from_hex (firmware_hash_hex);
-  claim->model_signature = g_bytes_from_hex (model_signature_hex);
-  claim->device_signature = g_bytes_from_hex (device_signature_hex);
+  claim->model_certificate = bytes_from_hex (certificate_hex);
+  claim->device_public_key = bytes_from_hex (device_public_key_hex);
+  claim->firmware_public_key = bytes_from_hex (firmware_public_key_hex);
+  claim->firmware_hash = bytes_from_hex (firmware_hash_hex);
+  claim->model_signature = bytes_from_hex (model_signature_hex);
+  claim->device_signature = bytes_from_hex (device_signature_hex);
   return g_steal_pointer (&claim);
 }
 
@@ -140,8 +140,8 @@ dev_identify (FpSdcpDevice *sdcp_device)
   app_secret = fpi_sdcp_device_get_application_secret (sdcp_device);
   g_assert (app_secret);
 
-  enroll_nonce = g_bytes_from_hex (enrollment_nonce_hex);
-  identify_nonce = g_bytes_from_hex (identify_nonce_hex);
+  enroll_nonce = bytes_from_hex (enrollment_nonce_hex);
+  identify_nonce = bytes_from_hex (identify_nonce_hex);
 
   enrollment_id = fpi_sdcp_generate_enrollment_id (app_secret, NULL, enroll_nonce, &error);
   if (!enrollment_id)
@@ -186,7 +186,7 @@ dev_enroll_commit (FpSdcpDevice *sdcp_device, GBytes *id)
       app_secret = fpi_sdcp_device_get_application_secret (sdcp_device);
       g_assert (app_secret);
 
-      nonce = g_bytes_from_hex (enrollment_nonce_hex);
+      nonce = bytes_from_hex (enrollment_nonce_hex);
       expected_id = fpi_sdcp_generate_enrollment_id (app_secret, NULL,
                                                      nonce, &error);
 
@@ -225,7 +225,7 @@ dev_enroll (FpSdcpDevice *sdcp_device)
   if (self->print_ids->len == 0)
     {
       /* Use the hard-coded nonce for the first enrollment */
-      nonce = g_bytes_from_hex (enrollment_nonce_hex);
+      nonce = bytes_from_hex (enrollment_nonce_hex);
     }
   else
     {
@@ -370,7 +370,7 @@ derive_application_secret (GBytes  *host_public_key,
                            GBytes  *device_random,
                            GError **error)
 {
-  g_autoptr(GBytes) firmware_private_key = g_bytes_from_hex (firmware_private_key_hex);
+  g_autoptr(GBytes) firmware_private_key = bytes_from_hex (firmware_private_key_hex);
   g_autoptr(GBytes) key_agreement = NULL;
   g_autoptr(GBytes) master_secret = NULL;
   g_autoptr(GBytes) application_keys = NULL;
@@ -424,7 +424,7 @@ dev_connect (FpSdcpDevice *sdcp_device)
   /* Use the fixed device_random_hex in deterministic mode, otherwise generate a fresh one */
   if (use_deterministic_random ())
     {
-      device_random = g_bytes_from_hex (device_random_hex);
+      device_random = bytes_from_hex (device_random_hex);
     }
   else if (!(device_random = fpi_sdcp_generate_random (&error)))
     {
