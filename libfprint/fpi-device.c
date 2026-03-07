@@ -220,6 +220,7 @@ fpi_device_error_new (FpDeviceError error)
 
     case FP_DEVICE_ERROR_TOO_HOT:
       msg = "Device disabled to prevent overheating.";
+      break;
 
     case FP_DEVICE_ERROR_UNTRUSTED:
       msg = "Could not verify integrity of the device, it cannot be trusted!";
