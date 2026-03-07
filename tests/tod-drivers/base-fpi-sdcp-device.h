@@ -58,7 +58,7 @@ struct _FpiSdcpClaimTODV1_95_0
   /*< private >*/
   /* padding for future expansion */
   TOD_PADDING_ALIGNED (16, 0);
-} FpiSdcpClaim;
+};
 
 typedef struct _FpiSdcpClaimTODV1_95_0 FpiSdcpClaimTODV1_95_0;
 

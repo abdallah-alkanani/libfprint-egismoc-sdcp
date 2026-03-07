@@ -27,6 +27,7 @@
 #include "tod-drivers/base-fpi-device.h"
 #include "tod-drivers/base-fpi-image.h"
 #include "tod-drivers/base-fpi-image-device.h"
+#include "tod-drivers/base-fpi-sdcp-device.h"
 #include "tod-drivers/base-fpi-spi.h"
 #include "tod-drivers/base-fpi-usb.h"
 
@@ -228,6 +229,50 @@ test_image_device_private (void)
 }
 
 static void
+test_device_sdcp_type (void)
+{
+  check_struct_size (FpiSdcpClaim, 1, 95, 0);
+
+  check_struct_size (FpSdcpDeviceClass, 1, 95, 0);
+  check_struct_size (FpSdcpDeviceClass, 1, 95, 1);
+
+  /* Version 1.95.0 */
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, verification_flags);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, open);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, connect);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, reconnect);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, list);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, enroll);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, enroll_commit);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 0, identify);
+
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, master_secret_label);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, application_keys_label);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, connect_label);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, reconnect_label);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, enroll_label);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, identify_label);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, sample_label);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, model_certificate);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, device_public_key);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, firmware_public_key);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, firmware_hash);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, model_signature);
+  check_struct_member (FpiSdcpClaim, 1, 95, 0, device_signature);
+
+  /* Version 1.95.1 */
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, verification_flags);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, open);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, connect);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, reconnect);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, list);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, enroll);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, enroll_commit);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, identify);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, get_trust_store);
+}
+
+static void
 test_usb_private (void)
 {
   check_struct_size (FpiUsbTransfer, 1, 90, 1);
@@ -282,11 +327,11 @@ test_device_public_enums (void)
   check_type_compatibility (FP_TYPE_DEVICE_ERROR, 1, 90, 3);
   check_type_compatibility (FP_TYPE_DEVICE_ERROR, 1, 90, 4);
   check_type_compatibility (FP_TYPE_DEVICE_ERROR, 1, 94, 0);
+  check_type_compatibility (FP_TYPE_DEVICE_ERROR, 1, 95, 0);
   check_type_compatibility (FP_TYPE_DEVICE_FEATURE, 1, 92, 0);
   check_type_compatibility (FP_TYPE_DEVICE_FEATURE, 1, 94, 0);
   check_type_compatibility (FP_TYPE_DEVICE_FEATURE, 1, 94, 3);
   check_type_compatibility (FP_TYPE_TEMPERATURE, 1, 94, 0);
-  check_type_compatibility (FPI_TYPE_DEVICE_UDEV_SUBTYPE_FLAGS, 1, 92, 0);
 }
 
 static void
@@ -294,6 +339,8 @@ test_device_private_enums (void)
 {
   check_type_compatibility (FPI_TYPE_DEVICE_ACTION, 1, 90, 1);
   check_type_compatibility (FPI_TYPE_DEVICE_ACTION, 1, 92, 0);
+  check_type_compatibility (FPI_TYPE_DEVICE_UDEV_SUBTYPE_FLAGS, 1, 92, 0);
+  check_type_compatibility (FPI_TYPE_DEVICE_SDCP_VERIFICATION_FLAGS, 1, 95, 0);
 }
 
 static void
@@ -307,6 +354,7 @@ static void
 test_print_private_enums (void)
 {
   check_type_compatibility (FPI_TYPE_PRINT_TYPE, 1, 90, 1);
+  check_type_compatibility (FPI_TYPE_PRINT_TYPE, 1, 95, 0);
   check_type_compatibility (FPI_TYPE_MATCH_RESULT, 1, 90, 1);
 }
 
@@ -333,6 +381,7 @@ main (int argc, char *argv[])
   g_test_add_func ("/type/device/private", test_device_type);
   g_test_add_func ("/type/device/enums", test_device_public_enums);
   g_test_add_func ("/type/device/private/enums", test_device_private_enums);
+  g_test_add_func ("/type/device/sdcp/private", test_device_sdcp_type);
   g_test_add_func ("/type/print/enums", test_print_public_enums);
   g_test_add_func ("/type/print/private/enums", test_print_private_enums);
   g_test_add_func ("/type/image-device/private", test_image_device_private);
