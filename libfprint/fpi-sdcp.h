@@ -1,6 +1,7 @@
 /*
  * Secure Device Connection Protocol (SDCP) support implementation
  * Copyright (C) 2025 Joshua Grisham <josh@joshuagrisham.com>
+ * Copyright (C) 2026 Marco Trevisan <marco.trevisan@canonical.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -50,10 +51,10 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  * @device_random: The random provided in the device's ConnectResponse (r_d)
  * @claim: #FpiSdcpClaim provided in the device's ConnectResponse (c)
  * @mac: The MAC provided in the device's ConnectResponse (m)
- * @additional_trust_store: (nullable): An optional #GResource containing additional
- *   PEM certificates at the path %FPI_SDCP_TRUST_STORE_PATH that are merged
- *   into the default SDCP trust store before certificate verification.
- *   Pass %NULL to use only the default trust store.
+ * @additional_ca_store: (nullable): An optional #GResource containing additional
+ *   PEM certificates at the path %FPI_SDCP_CA_STORE_PATH that are merged
+ *   into the default SDCP CA store before certificate verification.
+ *   Pass %NULL to use only the default CA store.
  * @verification_flags: Flags to control which verifications should be performed
  *   during the ConnectResponse validation.
  *   See #FpiDeviceSdcpVerificationFlags for details.
@@ -80,7 +81,7 @@ GBytes *fpi_sdcp_verify_connect (GBytes                        *host_private_key
                                  GBytes                        *device_random,
                                  FpiSdcpClaim                  *claim,
                                  GBytes                        *mac,
-                                 GResource                     *additional_trust_store,
+                                 GResource                     *additional_ca_store,
                                  FpiDeviceSdcpVerificationFlags verification_flags,
                                  GError                       **error);
 
@@ -200,10 +201,10 @@ GBytes *fpi_sdcp_mac (GBytes      *application_secret,
 /**
  * fpi_sdcp_verify_certificate:
  * @x509_certificate: An X.509 certificate in DER (ASN.1) format
- * @additional_trust_store: (nullable): An optional #GResource containing
- *   additional PEM certificates at the path %FPI_SDCP_TRUST_STORE_PATH that
- *   are merged into the default SDCP trust store.
- *   Use %NULL to use only the default trust store.
+ * @additional_ca_store: (nullable): An optional #GResource containing
+ *   additional PEM certificates at the path %FPI_SDCP_CA_STORE_PATH that
+ *   are merged into the default SDCP CA store.
+ *   Use %NULL to use only the default CA store.
  * @verification_flags: Flags to control certificate verification behaviour.
  *   See #FpiDeviceSdcpVerificationFlags for details.
  * @error: (out): #GError on failure
@@ -213,7 +214,7 @@ GBytes *fpi_sdcp_mac (GBytes      *application_secret,
  * Returns: %TRUE if the certificate is trusted
  **/
 gboolean fpi_sdcp_verify_certificate (GBytes                        *x509_certificate,
-                                      GResource                     *additional_trust_store,
+                                      GResource                     *additional_ca_store,
                                       FpiDeviceSdcpVerificationFlags verification_flags,
                                       GError                       **error);
 

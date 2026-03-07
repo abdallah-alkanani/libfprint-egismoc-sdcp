@@ -160,16 +160,16 @@ driver_sources = {
         [ 'drivers/focaltech_moc/focaltech_moc.c' ],
 }
 
-virtual_sdcp_truststore_resource = gnome.compile_resources(
-    'virtual-sdcp-truststore-resource',
-    'drivers/virtual-sdcp/virtual-sdcp-truststore.gresource.xml',
+virtual_sdcp_ca_store_resource = gnome.compile_resources(
+    'virtual-sdcp-ca-store-resource',
+    'drivers/virtual-sdcp/virtual-sdcp-ca-store.gresource.xml',
     source_dir: 'drivers/virtual-sdcp',
-    c_name: 'fpi_virtual_sdcp_truststore',
+    c_name: 'fpi_virtual_sdcp_ca_store',
     extra_args: ['--manual-register'],
 )
 
 driver_generated_sources = {
-    'virtual_sdcp' : virtual_sdcp_truststore_resource,
+    'virtual_sdcp' : virtual_sdcp_ca_store_resource,
 }
 
 helper_sources = {

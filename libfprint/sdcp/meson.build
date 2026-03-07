@@ -1,10 +1,10 @@
-# Enumerate all PEM certificate files in the truststore directory,
+# Enumerate all PEM certificate files in the CA store directory,
 # including their modification time so downstream targets re-run only
 # when a file is actually added, removed, or modified.
-sdcp_trust_store_pem_files = custom_target('pem-files',
+sdcp_ca_store_pem_files = custom_target('pem-files',
     command: [
         find_program('find'),
-        meson.current_source_dir() / 'truststore',
+        meson.current_source_dir() / 'ca-store',
         '-type', 'f',
         '-maxdepth', '1',
         '-name', '*.pem',
@@ -15,19 +15,19 @@ sdcp_trust_store_pem_files = custom_target('pem-files',
     build_always_stale: true,
 )
 
-sdcp_truststore_gresource_xml = custom_target('truststore-gresource-xml',
+sdcp_ca_store_gresource_xml = custom_target('ca-store-gresource-xml',
     input : files('generate-gresource.py'),
-    output : 'truststore.gresource.xml',
+    output : 'ca-store.gresource.xml',
     command : [
         python3,
         '@INPUT@',
-        sdcp_trust_store_pem_files,
+        sdcp_ca_store_pem_files,
         '@OUTPUT@',
     ],
 )
 
-sdcp_truststore_resource = gnome.compile_resources(
-    'fpi-sdcp-truststore-resource',
-    sdcp_truststore_gresource_xml,
-    c_name: 'fpi_sdcp_truststore',
+sdcp_ca_store_resource = gnome.compile_resources(
+    'fpi-sdcp-ca-store-resource',
+    sdcp_ca_store_gresource_xml,
+    c_name: 'fpi_sdcp_ca_store',
 )

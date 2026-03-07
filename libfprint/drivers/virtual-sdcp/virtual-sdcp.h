@@ -89,7 +89,7 @@ static const gchar firmware_hash_hex[]       = "c3bf47ea1f4a4a605470313cacb3a44f
  * device_signature_hex: Sign(sk_d, SHA256(C001 || h_f || pk_f))
  *
  * Both taken directly from the SDCP reference test run output; verified to
- * check out against the model certificate's pk_m key already in our truststore.
+ * check out against the model certificate's pk_m key already in our CA store.
  * See: https://github.com/Microsoft/SecureDeviceConnectionProtocol/blob/fe82ea1/README.md
  */
 static const gchar model_signature_hex[]     = "e9782b0e27729276810f3f1a5dfeaa5852e817e1a5cf1cadf20afbc7fc64b282"

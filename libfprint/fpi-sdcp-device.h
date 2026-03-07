@@ -49,14 +49,14 @@
 #define FPI_SDCP_DEFAULT_LABEL_ENROLL "enroll"
 #define FPI_SDCP_DEFAULT_LABEL_IDENTIFY "identify"
 
-#define FPI_SDCP_TRUST_STORE_PATH "/org/freedesktop/fprint/SDCP/truststore/"
+#define FPI_SDCP_CA_STORE_PATH "/org/freedesktop/fprint/SDCP/ca-store/"
 
 /**
  * FpiDeviceSdcpVerificationFlags:
  * @FPI_DEVICE_SDCP_VERIFICATION_DEFAULT: No flags. Perform all verifications.
  * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES: Skip validating the
- *   device's #FpiSdcpClaim.model_certificate against the SDCP truststore.
- *   SDCP truststore.
+ *   device's #FpiSdcpClaim.model_certificate against the SDCP CA store.
+ *   SDCP CA store.
  *   It determines if the model certificate (cert_m) should be parsed and
  *   its trust chain validated as issued from Microsoft's well-known issuers.
  * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES: Skip validating the
@@ -109,11 +109,11 @@ typedef enum {
  * @identify: Start identification process. On completion, the driver must call
  *   fpi_sdcp_device_identify_complete(). To request the user to retry the
  *   fpi_sdcp_device_identify_retry() function is used.
- * @get_trust_store: (optional): Return a #GResource containing additional PEM
- *   certificates at the path %FPI_SDCP_TRUST_STORE_PATH that will be merged
- *   into the default SDCP trust store during certificate verification.
+ * @get_ca_store: (optional): Return a #GResource containing additional PEM
+ *   certificates at the path %FPI_SDCP_CA_STORE_PATH that will be merged
+ *   into the default SDCP CA store during certificate verification.
  *   This allows drivers to supply device-specific CA certificates
- *   without affecting other devices. If not implemented, only the default trust
+ *   without affecting other devices. If not implemented, only the default CA
  *   store is used.
  *
  * These are the main entry points for drivers implementing SDCP.
@@ -153,7 +153,7 @@ struct _FpSdcpDeviceClass
                                                      GBytes       *id);
   void                           (*identify)        (FpSdcpDevice *sdcp_device);
 
-  GResource                    * (*get_trust_store) (FpSdcpDevice *sdcp_device);
+  GResource                    * (*get_ca_store)    (FpSdcpDevice *sdcp_device);
 
   /*< private >*/
   /* padding for future expansion */

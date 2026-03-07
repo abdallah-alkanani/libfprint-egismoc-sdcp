@@ -6,10 +6,10 @@ PKI structure:
   SDCP Virtual Test Root CA  (self-signed, CA:TRUE)
        └── SDCP Virtual Test Model  (signed by Root CA, CA:FALSE)
 
-The Root CA certificate is written to the driver's own trust store directory
+The Root CA certificate is written to the driver's own CA store directory
 (drivers/virtual-sdcp/) so that it is compiled into the
 virtual-sdcp driver's GResource and supplied at runtime via the
-get_trust_store vfunc.  It is never part of the default SDCP trust store.
+get_ca_store vfunc.  It is never part of the default SDCP CA store.
 The model certificate's public key comes from
 SecureDeviceConnectionProtocol/src/test/testkeys.c.
 
@@ -67,7 +67,7 @@ MODEL_PUB_KEY = bytes([
 ])
 
 # ---------------------------------------------------------------------------
-# Build root CA (self-signed, goes into truststore)
+# Build root CA (self-signed, goes into CA store)
 # ---------------------------------------------------------------------------
 
 def _ec_key_pair(priv_bytes, pub_bytes):
@@ -182,7 +182,7 @@ print(f"static const gchar expired_model_certificate_hex[] = {expired_c_value};"
 print()
 
 # ---------------------------------------------------------------------------
-# Write root CA PEM to truststore; remove the old self-signed model CA if present
+# Write root CA PEM to CA store; remove the old self-signed model CA if present
 # ---------------------------------------------------------------------------
 
 here = pathlib.Path(__file__).resolve().parent
@@ -205,4 +205,4 @@ if old_model_ca.exists():
 print()
 print("Note: the Root CA PEM is compiled into the virtual-sdcp driver's GResource")
 print("via drivers/virtual-sdcp/ and supplied at runtime through the")
-print("get_trust_store vfunc.  It is never part of the default SDCP trust store.")
+print("get_ca_store vfunc.  It is never part of the default SDCP CA store.")

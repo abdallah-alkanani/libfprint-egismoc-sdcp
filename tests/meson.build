@@ -291,7 +291,7 @@ test_utils = static_library('fprint-test-utils',
 
 unit_tests_deps = {
     'fpi-assembling' : [cairo_dep],
-    'fpi-sdcp' : [declare_dependency(sources: virtual_sdcp_truststore_resource)],
+    'fpi-sdcp' : [declare_dependency(sources: virtual_sdcp_ca_store_resource)],
 }
 
 foreach test_name: unit_tests

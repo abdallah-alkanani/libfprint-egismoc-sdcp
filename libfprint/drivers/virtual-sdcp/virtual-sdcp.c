@@ -41,7 +41,7 @@
 #include "fp-sdcp-device-private.h"
 
 #include "virtual-sdcp.h"
-#include "virtual-sdcp-truststore-resource.h"
+#include "virtual-sdcp-ca-store-resource.h"
 
 struct _FpDeviceVirtualSdcp
 {
@@ -424,15 +424,15 @@ dev_connect (FpSdcpDevice *sdcp_device)
 }
 
 static GResource *
-dev_get_trust_store (FpSdcpDevice *sdcp_device)
+dev_get_ca_store (FpSdcpDevice *sdcp_device)
 {
   if (use_untrusted_certificate ())
     {
-      fp_dbg ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE is set; not providing trust store.");
+      fp_dbg ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE is set; not providing CA store.");
       return NULL;
     }
 
-  return fpi_virtual_sdcp_truststore_get_resource ();
+  return fpi_virtual_sdcp_ca_store_get_resource ();
 }
 
 static void
@@ -521,7 +521,7 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
   sdcp_dev_class->enroll = dev_enroll;
   sdcp_dev_class->enroll_commit = dev_enroll_commit;
   sdcp_dev_class->identify = dev_identify;
-  sdcp_dev_class->get_trust_store = dev_get_trust_store;
+  sdcp_dev_class->get_ca_store = dev_get_ca_store;
 
   if (!is_reconnect_supported ())
     sdcp_dev_class->reconnect = NULL;
@@ -531,5 +531,5 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
   fpi_device_class_auto_initialize_features (dev_class);
   dev_class->features |= FP_DEVICE_FEATURE_STORAGE;
 
-  fpi_virtual_sdcp_truststore_register_resource ();
+  fpi_virtual_sdcp_ca_store_register_resource ();
 }

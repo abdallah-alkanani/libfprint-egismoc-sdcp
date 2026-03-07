@@ -4,7 +4,7 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 
-gresource_prefix = "/org/freedesktop/fprint/SDCP/truststore"
+gresource_prefix = "/org/freedesktop/fprint/SDCP/ca-store"
 [_, file_list, output] = sys.argv
 
 with open(file_list, 'rt', encoding='utf-8') as f:

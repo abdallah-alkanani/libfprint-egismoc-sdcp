@@ -1,6 +1,7 @@
 /*
  * Secure Device Connection Protocol (SDCP) support implementation
  * Copyright (C) 2025 Joshua Grisham <josh@joshuagrisham.com>
+ * Copyright (C) 2026 Marco Trevisan <marco.trevisan@canonical.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,7 +23,7 @@
 
 #include "fpi-sdcp.h"
 #include "fpi-sdcp-claim.h"
-#include "sdcp/fpi-sdcp-truststore-resource.h"
+#include "sdcp/fpi-sdcp-ca-store-resource.h"
 
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
@@ -318,73 +319,73 @@ fpi_sdcp_verify_signature (EVP_PKEY    *pkey,
 }
 
 static gboolean
-fpi_sdcp_load_trustcerts_from_resource (X509_STORE  *truststore,
-                                        GResource   *resource,
-                                        const gchar *resource_path,
-                                        GError     **error)
+fpi_sdcp_load_ca_certs_from_resource (X509_STORE  *ca_store,
+                                      GResource   *resource,
+                                      const gchar *resource_path,
+                                      GError     **error)
 {
   g_autoptr(GError) local_error = NULL;
-  g_auto(GStrv) trustcert_names = NULL;
-  const gchar *trustcert_ptr;
-  gsize trustcert_len = 0;
+  g_auto(GStrv) ca_cert_names = NULL;
+  const gchar *ca_cert_ptr;
+  gsize ca_cert_len = 0;
 
-  trustcert_names = g_resource_enumerate_children (resource,
-                                                   resource_path,
-                                                   G_RESOURCE_LOOKUP_FLAGS_NONE,
-                                                   &local_error);
+  ca_cert_names = g_resource_enumerate_children (resource,
+                                                 resource_path,
+                                                 G_RESOURCE_LOOKUP_FLAGS_NONE,
+                                                 &local_error);
 
-  if (!trustcert_names || *trustcert_names == NULL)
+  if (!ca_cert_names || *ca_cert_names == NULL)
     {
       g_propagate_error (error,
                          fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                 "Error loading SDCP truststore certificates: %s",
+                                                 "Error loading SDCP ca_store certificates: %s",
                                                  local_error->message));
       return FALSE;
     }
 
-  for (int i = 0; trustcert_names[i]; i++)
+  for (int i = 0; ca_cert_names[i]; i++)
     {
-      g_autoptr(GBytes) trustcert_gb = NULL;
-      g_autofree gchar *trustcert_path = NULL;
+      g_autoptr(GBytes) ca_cert_gb = NULL;
+      g_autofree gchar *ca_cert_path = NULL;
       g_autoptr(BIO) bio = NULL;
-      g_autoptr(X509) trustcert = NULL;
+      g_autoptr(X509) ca_cert = NULL;
 
-      fp_dbg ("Adding certificate to SDCP truststore: %s", trustcert_names[i]);
-      trustcert_path = g_strconcat (resource_path, trustcert_names[i], NULL);
-      trustcert_gb = g_resource_lookup_data (resource,
-                                             trustcert_path, 0,
-                                             &local_error);
-      if (!trustcert_gb)
+      fp_dbg ("Adding certificate to SDCP ca_store: %s", ca_cert_names[i]);
+      ca_cert_path = g_strconcat (resource_path, ca_cert_names[i], NULL);
+      ca_cert_gb = g_resource_lookup_data (resource,
+                                           ca_cert_path, 0,
+                                           &local_error);
+      if (!ca_cert_gb)
         {
           g_propagate_error (error,
                              fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                     "Error loading SDCP truststore "
+                                                     "Error loading SDCP ca_store "
                                                      "certificate '%s': %s",
-                                                     trustcert_names[i],
+                                                     ca_cert_names[i],
                                                      local_error->message));
           return FALSE;
         }
 
-      trustcert_ptr = g_bytes_get_data (trustcert_gb, &trustcert_len);
+      ca_cert_ptr = g_bytes_get_data (ca_cert_gb, &ca_cert_len);
 
       bio = BIO_new (BIO_s_mem ());
-      if (BIO_write (bio, trustcert_ptr, trustcert_len) != trustcert_len)
+      if (BIO_write (bio, ca_cert_ptr, ca_cert_len) != ca_cert_len)
         {
           g_propagate_error (error,
                              fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                      "Failed reading '%s' to buffer",
-                                                     trustcert_names[i]));
+                                                     ca_cert_names[i]));
           return FALSE;
         }
 
-      trustcert = PEM_read_bio_X509 (bio, NULL, NULL, NULL);
-      //print_certificate (trustcert);
-      if (!X509_STORE_add_cert (truststore, trustcert))
+      ca_cert = PEM_read_bio_X509 (bio, NULL, NULL, NULL);
+      //print_certificate (ca_cert);
+      if (!X509_STORE_add_cert (ca_store, ca_cert))
         {
           g_propagate_error (error,
                              fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                      "Failed adding '%s' to X509 store",
-                                                     trustcert_names[i]));
+                                                     ca_cert_names[i]));
           return FALSE;
         }
     }
@@ -393,14 +394,14 @@ fpi_sdcp_load_trustcerts_from_resource (X509_STORE  *truststore,
 }
 
 static X509_STORE *
-fpi_sdcp_build_truststore (GResource *additional_trust_store,
-                           GError   **error)
+fpi_sdcp_build_ca_store (GResource *additional_ca_store,
+                         GError   **error)
 {
-  g_autoptr(X509_STORE) truststore = NULL;
+  g_autoptr(X509_STORE) ca_store = NULL;
   GResource *default_resource = NULL;
 
-  truststore = X509_STORE_new ();
-  if (!truststore)
+  ca_store = X509_STORE_new ();
+  if (!ca_store)
     {
       g_propagate_error (error,
                          fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
@@ -408,55 +409,55 @@ fpi_sdcp_build_truststore (GResource *additional_trust_store,
       return NULL;
     }
 
-  default_resource = fpi_sdcp_truststore_get_resource ();
+  default_resource = fpi_sdcp_ca_store_get_resource ();
 
-  if (!fpi_sdcp_load_trustcerts_from_resource (truststore,
-                                               default_resource,
-                                               FPI_SDCP_TRUST_STORE_PATH,
-                                               error))
+  if (!fpi_sdcp_load_ca_certs_from_resource (ca_store,
+                                             default_resource,
+                                             FPI_SDCP_CA_STORE_PATH,
+                                             error))
     return NULL;
 
-  if (additional_trust_store)
+  if (additional_ca_store)
     {
-      if (!fpi_sdcp_load_trustcerts_from_resource (truststore,
-                                                   additional_trust_store,
-                                                   FPI_SDCP_TRUST_STORE_PATH,
-                                                   error))
+      if (!fpi_sdcp_load_ca_certs_from_resource (ca_store,
+                                                 additional_ca_store,
+                                                 FPI_SDCP_CA_STORE_PATH,
+                                                 error))
         return NULL;
     }
 
-  return g_steal_pointer (&truststore);
+  return g_steal_pointer (&ca_store);
 }
 
 static X509_STORE *
-fpi_sdcp_get_truststore (GResource *additional_trust_store,
-                         GError   **error)
+fpi_sdcp_get_ca_store (GResource *additional_ca_store,
+                       GError   **error)
 {
-  static X509_STORE *default_truststore = NULL;
+  static X509_STORE *default_ca_store = NULL;
 
-  /* When a driver provides its own trust store, we build a fresh combined
-   * truststore each time since the result is driver-specific. */
-  if (additional_trust_store)
-    return fpi_sdcp_build_truststore (additional_trust_store, error);
+  /* When a driver provides its own CA store, we build a fresh combined
+   * ca_store each time since the result is driver-specific. */
+  if (additional_ca_store)
+    return fpi_sdcp_build_ca_store (additional_ca_store, error);
 
-  if (g_once_init_enter_pointer (&default_truststore))
+  if (g_once_init_enter_pointer (&default_ca_store))
     {
-      g_once_init_leave_pointer (&default_truststore,
-                                 fpi_sdcp_build_truststore (NULL, error));
-      g_return_val_if_fail (default_truststore != NULL, NULL);
+      g_once_init_leave_pointer (&default_ca_store,
+                                 fpi_sdcp_build_ca_store (NULL, error));
+      g_return_val_if_fail (default_ca_store != NULL, NULL);
     }
 
-  X509_STORE_up_ref (default_truststore);
-  return default_truststore;
+  X509_STORE_up_ref (default_ca_store);
+  return default_ca_store;
 }
 
 static X509 *
 fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificate,
-                                  GResource                     *additional_trust_store,
+                                  GResource                     *additional_ca_store,
                                   FpiDeviceSdcpVerificationFlags verification_flags,
                                   GError                       **error)
 {
-  g_autoptr(X509_STORE) sdcp_truststore = NULL;
+  g_autoptr(X509_STORE) sdcp_ca_store = NULL;
   g_autoptr(X509_STORE_CTX) ctx = NULL;
   const guint8 *cert_ptr;
   g_autoptr(X509) cert = NULL;
@@ -476,13 +477,13 @@ fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificat
 
   print_certificate (cert);
 
-  sdcp_truststore = fpi_sdcp_get_truststore (additional_trust_store, error);
-  if (!sdcp_truststore)
+  sdcp_ca_store = fpi_sdcp_get_ca_store (additional_ca_store, error);
+  if (!sdcp_ca_store)
     return NULL;
 
   ctx = X509_STORE_CTX_new ();
 
-  if (!X509_STORE_CTX_init (ctx, sdcp_truststore, cert, NULL))
+  if (!X509_STORE_CTX_init (ctx, sdcp_ca_store, cert, NULL))
     {
       g_propagate_error (error,
                          fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
@@ -547,14 +548,14 @@ fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificat
 
 gboolean
 fpi_sdcp_verify_certificate (GBytes                        *x509_certificate,
-                             GResource                     *additional_trust_store,
+                             GResource                     *additional_ca_store,
                              FpiDeviceSdcpVerificationFlags verification_flags,
                              GError                       **error)
 {
   g_autoptr(X509) cert = NULL;
 
   cert = fpi_sdcp_verify_x509_certificate (x509_certificate,
-                                           additional_trust_store,
+                                           additional_ca_store,
                                            verification_flags,
                                            error);
   return cert != NULL;
@@ -1026,7 +1027,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                          GBytes                        *device_random,
                          FpiSdcpClaim                  *claim,
                          GBytes                        *mac,
-                         GResource                     *additional_trust_store,
+                         GResource                     *additional_ca_store,
                          FpiDeviceSdcpVerificationFlags verification_flags,
                          GError                       **error)
 {
@@ -1148,7 +1149,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
   /* Parse and Validate the certificate */
   cert = fpi_sdcp_verify_x509_certificate (claim->model_certificate,
-                                           additional_trust_store,
+                                           additional_ca_store,
                                            verification_flags,
                                            error);
   if (!cert)

@@ -25,7 +25,7 @@
 #include "fpi-sdcp-device.h"
 
 /* We can re-use the device test payloads from virtual-sdcp */
-#include "virtual-sdcp-truststore-resource.h"
+#include "virtual-sdcp-ca-store-resource.h"
 #include "drivers/virtual-sdcp/virtual-sdcp.h"
 
 #include <openssl/bio.h>
@@ -222,18 +222,18 @@ test_verify_connect (void)
   g_autoptr(GBytes) expected_application_secret = g_bytes_from_hex (application_secret_hex);
   g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
 
-  fpi_virtual_sdcp_truststore_register_resource ();
+  fpi_virtual_sdcp_ca_store_register_resource ();
 
   application_secret = fpi_sdcp_verify_connect (host_private_key,
                                                 host_random,
                                                 device_random,
                                                 claim,
                                                 connect_mac,
-                                                fpi_virtual_sdcp_truststore_get_resource (),
+                                                fpi_virtual_sdcp_ca_store_get_resource (),
                                                 FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
                                                 &error);
 
-  fpi_virtual_sdcp_truststore_unregister_resource ();
+  fpi_virtual_sdcp_ca_store_unregister_resource ();
 
   g_assert_no_error (error);
   g_assert_nonnull (application_secret);
@@ -640,7 +640,7 @@ test_verify_real_model_cert (void)
 
   /*
    * "Secure BIO Sensor" cert signed by "Windows Hello 19B92965 CA 2018"
-   * (which is in the default SDCP trust store). The cert expired in Aug 2019
+   * (which is in the default SDCP CA store). The cert expired in Aug 2019
    * so we must skip the time check.
    */
   g_assert_true (verify_model_certificate (cert_bytes,
