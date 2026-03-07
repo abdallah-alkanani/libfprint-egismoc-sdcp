@@ -454,15 +454,15 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
     }
 
   /* Verify connect and store the application_secret */
-  if (!fpi_sdcp_verify_connect (priv->host_private_key,
-                                priv->host_random,
-                                device_random,
-                                claim,
-                                mac,
-                                cls->get_trust_store ? cls->get_trust_store (self) : NULL,
-                                cls->verification_flags,
-                                &application_secret,
-                                &error))
+  application_secret = fpi_sdcp_verify_connect (priv->host_private_key,
+                                                priv->host_random,
+                                                device_random,
+                                                claim,
+                                                mac,
+                                                cls->get_trust_store ? cls->get_trust_store (self) : NULL,
+                                                cls->verification_flags,
+                                                &error);
+  if (!application_secret)
     {
       fpi_device_open_complete (FP_DEVICE (self),
                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,

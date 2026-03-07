@@ -927,7 +927,7 @@ fpi_sdcp_generate_random (GError **error)
   return fpi_sdcp_bytes_new_secure_take (random, FPI_SDCP_RANDOM_SIZE);
 }
 
-gboolean
+GBytes *
 fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                          GBytes                        *host_random,
                          GBytes                        *device_random,
@@ -935,7 +935,6 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                          GBytes                        *mac,
                          GResource                     *additional_trust_store,
                          FpiDeviceSdcpVerificationFlags verification_flags,
-                         GBytes                       **application_secret,
                          GError                       **error)
 {
   g_autoptr(GBytes) claim_hash = NULL;
@@ -946,13 +945,11 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   g_autoptr(GBytes) out_app_secret = NULL;
   guint8 *app_secret_buf = NULL;
 
-  g_return_val_if_fail (host_private_key != NULL, FALSE);
-  g_return_val_if_fail (host_random != NULL, FALSE);
-  g_return_val_if_fail (device_random != NULL, FALSE);
-  g_return_val_if_fail (claim != NULL, FALSE);
-  g_return_val_if_fail (mac != NULL, FALSE);
-  g_return_val_if_fail (application_secret != NULL, FALSE);
-  g_return_val_if_fail (*application_secret == NULL, FALSE);
+  g_return_val_if_fail (host_private_key != NULL, NULL);
+  g_return_val_if_fail (host_random != NULL, NULL);
+  g_return_val_if_fail (device_random != NULL, NULL);
+  g_return_val_if_fail (claim != NULL, NULL);
+  g_return_val_if_fail (mac != NULL, NULL);
 
   X509 *cert = NULL;
   EVP_PKEY *cert_public_pkey = NULL;
@@ -1135,10 +1132,7 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
       X509_free (cert);
     }
 
-  /* output application_secret */
-  *application_secret = g_steal_pointer (&out_app_secret);
-
-  return TRUE;
+  return g_steal_pointer (&out_app_secret);
 
 out_error:
   print_openssl_errors ();
@@ -1148,7 +1142,7 @@ out:
   g_clear_pointer (&device_public_pkey, EVP_PKEY_free);
   g_clear_pointer (&cert_public_pkey, EVP_PKEY_free);
   g_clear_pointer (&cert, X509_free);
-  return FALSE;
+  return NULL;
 }
 
 gboolean

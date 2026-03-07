@@ -224,19 +224,19 @@ test_verify_connect (void)
 
   fpi_virtual_sdcp_truststore_register_resource ();
 
-  g_assert_true (fpi_sdcp_verify_connect (host_private_key,
-                                          host_random,
-                                          device_random,
-                                          claim,
-                                          connect_mac,
-                                          fpi_virtual_sdcp_truststore_get_resource (),
-                                          FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
-                                          &application_secret,
-                                          &error));
+  application_secret = fpi_sdcp_verify_connect (host_private_key,
+                                                host_random,
+                                                device_random,
+                                                claim,
+                                                connect_mac,
+                                                fpi_virtual_sdcp_truststore_get_resource (),
+                                                FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
+                                                &error);
 
   fpi_virtual_sdcp_truststore_unregister_resource ();
 
   g_assert_no_error (error);
+  g_assert_nonnull (application_secret);
   g_assert_cmpuint (g_bytes_get_size (application_secret), ==, FPI_SDCP_APPLICATION_SECRET_SIZE);
 
   fp_dbg ("application_secret:");

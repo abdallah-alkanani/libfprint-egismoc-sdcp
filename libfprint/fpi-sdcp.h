@@ -57,8 +57,6 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  * @verification_flags: Flags to control which verifications should be performed
  *   during the ConnectResponse validation.
  *   See #FpiDeviceSdcpVerificationFlags for details.
- * @application_secret: (out) (transfer full): A new #GBytes with the derived
- *   application secret (s) of length %FPI_SDCP_APPLICATION_SECRET_SIZE
  * @error: (out): #GError in case the return value is %NULL
  *
  * High level function which internally handles the derivation of all necessary
@@ -74,18 +72,17 @@ GBytes *fpi_sdcp_generate_random (GError **error);
  * If any of these these validations fail then %NULL will be returned,
  * indicating that the SDCP secure connection channel could not be established.
  *
- * Returns: %TRUE if the @application_secret was successfully derived and the
- * ConnectResponse has been successfully verified
+ * Returns: (transfer full): A new #GBytes with the derived application secret
+ *   (s) of length %FPI_SDCP_APPLICATION_SECRET_SIZE, or %NULL on failure
  **/
-gboolean fpi_sdcp_verify_connect (GBytes                        *host_private_key,
-                                  GBytes                        *host_random,
-                                  GBytes                        *device_random,
-                                  FpiSdcpClaim                  *claim,
-                                  GBytes                        *mac,
-                                  GResource                     *additional_trust_store,
-                                  FpiDeviceSdcpVerificationFlags verification_flags,
-                                  GBytes                       **application_secret,
-                                  GError                       **error);
+GBytes *fpi_sdcp_verify_connect (GBytes                        *host_private_key,
+                                 GBytes                        *host_random,
+                                 GBytes                        *device_random,
+                                 FpiSdcpClaim                  *claim,
+                                 GBytes                        *mac,
+                                 GResource                     *additional_trust_store,
+                                 FpiDeviceSdcpVerificationFlags verification_flags,
+                                 GError                       **error);
 
 /**
  * fpi_sdcp_verify_reconnect:
