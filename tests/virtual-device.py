@@ -123,13 +123,17 @@ class VirtualDeviceBase(unittest.TestCase):
             del self.ctx
         super().tearDown()
 
+    def sleep_multiplier(self):
+        return 5 if 'UNDER_VALGRIND' in os.environ else 1
+
     def wait_timeout(self, interval):
+        multiplier = self.sleep_multiplier()
         timeout_reached = False
         def on_timeout():
             nonlocal timeout_reached
             timeout_reached = True
 
-        GLib.timeout_add(interval, on_timeout)
+        GLib.timeout_add(interval * multiplier, on_timeout)
         while not timeout_reached:
             ctx.iteration(False)
 
@@ -183,8 +187,7 @@ class VirtualDeviceBase(unittest.TestCase):
 
     def send_sleep(self, interval):
         self.assertGreater(interval, 0)
-        multiplier = 5 if 'UNDER_VALGRIND' in os.environ else 1
-        self.send_command('SLEEP', interval * multiplier)
+        self.send_command('SLEEP', interval * self.sleep_multiplier())
 
     def enroll_print(self, nick, finger, username='testuser', retry_scan=-1):
         self._enrolled = None
