@@ -37,3 +37,13 @@ extern void fpi_ssm_jump_to_state_delayed_1_90 (FpiSsm       *machine,
 extern void fpi_ssm_mark_completed_delayed_1_90 (FpiSsm       *machine,
                                                  int           delay,
                                                  GCancellable *cancellable);
+extern void fpi_sdcp_device_get_application_secret_1_95 (FpSdcpDevice *device,
+                                                         GBytes      **secret);
+gboolean fpi_sdcp_verify_connect_1_95 (GBytes                        *host_private_key,
+                                       GBytes                        *host_random,
+                                       GBytes                        *device_random,
+                                       FpiSdcpClaim                  *claim,
+                                       GBytes                        *mac,
+                                       FpiDeviceSdcpVerificationFlags verification_flags,
+                                       GBytes                       **application_secret,
+                                       GError                       **error);

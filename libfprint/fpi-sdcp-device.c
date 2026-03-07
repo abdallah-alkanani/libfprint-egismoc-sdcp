@@ -926,3 +926,8 @@ fpi_sdcp_device_set_print_id (FpPrint *print,
 
   g_object_set (G_OBJECT (print), "fpi-data", data, NULL);
 }
+
+
+#ifdef TOD_LIBRARY
+#include "tod/tod-fpi-sdcp-device.c"
+#endif

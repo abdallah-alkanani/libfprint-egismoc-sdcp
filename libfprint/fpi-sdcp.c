@@ -1245,3 +1245,7 @@ fpi_sdcp_generate_enrollment_id (GBytes      *application_secret,
 
   return g_steal_pointer (&id);
 }
+
+#ifdef TOD_LIBRARY
+#include "tod/tod-fpi-sdcp.c"
+#endif

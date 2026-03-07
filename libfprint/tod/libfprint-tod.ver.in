@@ -253,6 +253,8 @@ global:
 
 LIBFPRINT_TOD_@tod_soversion@_1.95 {
 global:
+    fpi_dbg_hex_dump_bytes;
+    fpi_dbg_hex_dump_gbytes;
     fpi_device_emulation_mode_enabled;
     fpi_device_sdcp_verification_flags_get_type;
     fpi_sdcp_claim_copy;
@@ -285,14 +287,22 @@ global:
     fpi_sdcp_generate_enrollment_id;
     fpi_sdcp_generate_host_key;
     fpi_sdcp_generate_random;
-    fpi_sdcp_key_agreement;
-    fpi_sdcp_kdf;
-    fpi_sdcp_mac;
-    fpi_sdcp_verify_certificate;
     fpi_sdcp_verify_connect;
     fpi_sdcp_verify_identify;
     fpi_sdcp_verify_reconnect;
+} LIBFPRINT_TOD_@tod_soversion@_1.94;
+
+LIBFPRINT_TOD_@tod_soversion@_1.95.1 {
+global:
+    fpi_device_emulation_mode_enabled;
+    fpi_sdcp_claim_hash;
+    fpi_sdcp_device_get_application_secret;
+    fpi_sdcp_device_get_application_secret_1_95;
+    fpi_sdcp_kdf;
+    fpi_sdcp_key_agreement;
+    fpi_sdcp_mac;
+    fpi_sdcp_verify_certificate;
 
     /* Keep this always in the current development version */
     fpi_*;
-} LIBFPRINT_TOD_@tod_soversion@_1.94;
+} LIBFPRINT_TOD_@tod_soversion@_1.95;

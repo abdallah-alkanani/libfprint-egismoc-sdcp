@@ -26,8 +26,12 @@
 #define TOD_1_SYMBOL_VERSION_1_90 "LIBFPRINT_TOD_1.0.0"
 #define TOD_1_SYMBOL_VERSION_1_92 "LIBFPRINT_TOD_1_1.92"
 #define TOD_1_SYMBOL_VERSION_1_94 "LIBFPRINT_TOD_1_1.94"
+#define TOD_1_SYMBOL_VERSION_1_95 "LIBFPRINT_TOD_1_1.95"
+#define TOD_1_SYMBOL_VERSION_1_95_1 "LIBFPRINT_TOD_1_1.95.1"
 #define TOD_1_SYMBOL_VERSION(major, minor) \
   TOD_1_SYMBOL_VERSION_ ## major ## _ ## minor
+#define TOD_1_SYMBOL_VERSION_FULL(major, minor, micro) \
+  TOD_1_SYMBOL_VERSION_ ## major ## _ ## minor ## _ ## micro
 
 #define TOD_DEFAULT_UPSTREAM_SYMBOL_VERSIONED(symbol, major, minor) \
   __asm__ (".symver " # symbol "," # symbol "@@@" \
@@ -43,6 +47,13 @@
   __asm__ (".symver " # symbol "_" # major "_" #minor "," # symbol "@" \
            TOD_1_SYMBOL_VERSION (major, minor));
 
+#define TOD_DEFAULT_VERSION_SYMBOL_FULL(symbol, major, minor, micro) \
+  __asm__ (".symver " # symbol "," # symbol "@@@" \
+           TOD_1_SYMBOL_VERSION_FULL (major, minor, micro));
+#define TOD_VERSIONED_SYMBOL_FULL(symbol, major, minor, micro) \
+  __asm__ (".symver " # symbol "_" # major "_" #minor "_" #micro "," # symbol "@" \
+           TOD_1_SYMBOL_VERSION_FULL (major, minor, micro));
+
 TOD_DEFAULT_VERSION_SYMBOL (fpi_ssm_new_full, 1, 92)
 TOD_VERSIONED_SYMBOL (fpi_ssm_new_full, 1, 90)
 
@@ -54,3 +65,9 @@ TOD_VERSIONED_SYMBOL (fpi_ssm_jump_to_state_delayed, 1, 90)
 
 TOD_DEFAULT_VERSION_SYMBOL (fpi_ssm_mark_completed_delayed, 1, 92)
 TOD_VERSIONED_SYMBOL (fpi_ssm_mark_completed_delayed, 1, 90)
+
+TOD_DEFAULT_VERSION_SYMBOL_FULL (fpi_sdcp_device_get_application_secret, 1, 95, 1)
+TOD_VERSIONED_SYMBOL (fpi_sdcp_device_get_application_secret, 1, 95)
+
+TOD_DEFAULT_VERSION_SYMBOL_FULL (fpi_sdcp_verify_connect, 1, 95, 1)
+TOD_VERSIONED_SYMBOL (fpi_sdcp_verify_connect, 1, 95)
