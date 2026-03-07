@@ -508,7 +508,7 @@ fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificat
         }
     }
 
-  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT)
+  if (!(verification_flags & FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT))
     {
       /* Do not allow broken certificates */
       if (!X509_VERIFY_PARAM_set_flags (X509_STORE_CTX_get0_param (ctx),
