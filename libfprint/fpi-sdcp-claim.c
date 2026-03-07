@@ -30,6 +30,9 @@
 
 G_DEFINE_BOXED_TYPE (FpiSdcpClaim, fpi_sdcp_claim, fpi_sdcp_claim_copy, fpi_sdcp_claim_free)
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (EVP_MD_CTX, EVP_MD_CTX_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (EVP_MD, EVP_MD_free)
+
 static void
 print_openssl_errors (void)
 {
@@ -145,59 +148,56 @@ GBytes *
 fpi_sdcp_claim_hash (FpiSdcpClaim *claim,
                      GError      **error)
 {
-  g_autoptr(GBytes) res = NULL;
-  EVP_MD_CTX *sh256_ctx;
-  EVP_MD *sha256;
-  guint8 *hash = NULL;
+  g_autoptr(EVP_MD_CTX) sh256_ctx = NULL;
+  g_autoptr(EVP_MD) sha256 = NULL;
+  g_autofree guint8 *hash = NULL;
   guint hash_len = 0;
-  const guint8 *data;
-  gsize data_size = 0;
+  struct { const gchar *name;
+           GBytes      *data;
+  } fields[] = {
+    { "model certificate",   claim->model_certificate   },
+    { "device public key",   claim->device_public_key   },
+    { "firmware public key", claim->firmware_public_key },
+    { "firmware hash",       claim->firmware_hash       },
+    { "model signature",     claim->model_signature     },
+    { "device signature",    claim->device_signature    },
+  };
 
-  sh256_ctx = EVP_MD_CTX_create ();
+  sh256_ctx = EVP_MD_CTX_new ();
   sha256 = EVP_MD_fetch (NULL, "SHA256", NULL);
+
   if (!EVP_DigestInit_ex (sh256_ctx, sha256, NULL))
-    goto out_error;
+    {
+      g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                          "OpenSSL error initializing SHA256 for "
+                                                          "SDCP claim hash"));
+      print_openssl_errors ();
+      return NULL;
+    }
 
-  data = g_bytes_get_data (claim->model_certificate, &data_size);
-  if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
-    goto out_error;
+  for (gsize i = 0; i < G_N_ELEMENTS (fields); i++)
+    {
+      gsize data_size;
+      const guint8 *data = g_bytes_get_data (fields[i].data, &data_size);
 
-  data = g_bytes_get_data (claim->device_public_key, &data_size);
-  if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
-    goto out_error;
-
-  data = g_bytes_get_data (claim->firmware_public_key, &data_size);
-  if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
-    goto out_error;
-
-  data = g_bytes_get_data (claim->firmware_hash, &data_size);
-  if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
-    goto out_error;
-
-  data = g_bytes_get_data (claim->model_signature, &data_size);
-  if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
-    goto out_error;
-
-  data = g_bytes_get_data (claim->device_signature, &data_size);
-  if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
-    goto out_error;
+      if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
+        {
+          g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                              "OpenSSL error hashing SDCP claim "
+                                                              "field '%s'", fields[i].name));
+          print_openssl_errors ();
+          return NULL;
+        }
+    }
 
   hash = g_malloc0 (EVP_MAX_MD_SIZE);
   if (!EVP_DigestFinal_ex (sh256_ctx, hash, &hash_len))
-    goto out_error;
+    {
+      g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                                          "OpenSSL error finalizing SDCP claim hash"));
+      print_openssl_errors ();
+      return NULL;
+    }
 
-  EVP_MD_CTX_free (sh256_ctx);
-  EVP_MD_free (sha256);
-
-  res = g_bytes_new_take (hash, hash_len);
-  return g_steal_pointer (&res);
-
-out_error:
-  g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                      "OpenSSL error hashing the SDCP claim"));
-  print_openssl_errors ();
-  g_clear_pointer (&sh256_ctx, EVP_MD_CTX_free);
-  g_clear_pointer (&sha256, EVP_MD_free);
-  g_clear_pointer (&hash, g_free);
-  return NULL;
+  return g_bytes_new_take (g_steal_pointer (&hash), hash_len);
 }
