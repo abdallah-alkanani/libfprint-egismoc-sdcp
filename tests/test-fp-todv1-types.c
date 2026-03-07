@@ -269,7 +269,7 @@ test_device_sdcp_type (void)
   check_struct_member (FpSdcpDeviceClass, 1, 95, 1, enroll);
   check_struct_member (FpSdcpDeviceClass, 1, 95, 1, enroll_commit);
   check_struct_member (FpSdcpDeviceClass, 1, 95, 1, identify);
-  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, get_trust_store);
+  check_struct_member (FpSdcpDeviceClass, 1, 95, 1, get_ca_store);
 }
 
 static void

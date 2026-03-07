@@ -221,7 +221,7 @@ if 'sdcp' in driver_helpers
 
     if not get_option('tod')
         libfprint_private_sources += [
-            sdcp_truststore_resource[0],
+            sdcp_ca_store_resource[0],
         ]
     endif
 endif

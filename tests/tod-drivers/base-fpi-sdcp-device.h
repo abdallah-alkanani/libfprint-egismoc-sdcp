@@ -100,7 +100,7 @@ struct _FpSdcpDeviceClassTODV1_95_1
                                                                GBytes       *id);
   void                                     (*identify)        (FpSdcpDevice *sdcp_device);
 
-  GResource                              * (*get_trust_store) (FpSdcpDevice *sdcp_device);
+  GResource                              * (*get_ca_store)    (FpSdcpDevice *sdcp_device);
 
   /*< private >*/
   /* padding for future expansion */
