@@ -376,7 +376,9 @@ udev_hwdb = executable('fprint-list-udev-hwdb',
     'fprint-list-udev-hwdb.c',
     dependencies: libfprint_private_dep,
     link_with: libfprint_drivers,
-    install: false)
+    install: false,
+    link_args: ['-Wl,--disable-new-dtags'],
+)
 
 udev_hwdb_generator = custom_target('udev-hwdb',
     output: 'autosuspend.hwdb',
@@ -391,7 +393,9 @@ metainfo = executable('fprint-list-metainfo',
     'fprint-list-metainfo.c',
     dependencies: libfprint_private_dep,
     link_with: libfprint_drivers,
-    install: false)
+    install: false,
+    link_args: ['-Wl,--disable-new-dtags'],
+)
 
 metainfo_generator = custom_target('metainfo',
     output: 'org.freedesktop.libfprint.metainfo.xml',
@@ -408,7 +412,9 @@ if install_udev_rules
         'fprint-list-udev-rules.c',
         dependencies: libfprint_private_dep,
         link_with: libfprint_drivers,
-        install: false)
+        install: false,
+        link_args: ['-Wl,--disable-new-dtags'],
+    )
 
     custom_target('udev-rules',
         output: '70-@0@.rules'.format(versioned_libname),
