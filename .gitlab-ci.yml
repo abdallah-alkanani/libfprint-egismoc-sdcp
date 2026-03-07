@@ -169,7 +169,7 @@ test_scan_build:
     - .standard_job
   allow_failure: true
   script:
-    - meson setup _build -Ddrivers=all
+    - meson setup _build -Ddrivers=all -Dintrospection=false
     # Wrapper to add --status-bugs and disable malloc checker
     - SCANBUILD=$CI_PROJECT_DIR/.gitlab-ci/scan-build
       ninja -C _build scan-build
