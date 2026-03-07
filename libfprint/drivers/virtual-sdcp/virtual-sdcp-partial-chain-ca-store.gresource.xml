@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/org/freedesktop/fprint/SDCP/ca-store">
+    <file>SDCP Virtual Test Intermediate CA.pem</file>
+  </gresource>
+</gresources>

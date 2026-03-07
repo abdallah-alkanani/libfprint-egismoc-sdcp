@@ -4,12 +4,28 @@ Generate the virtual SDCP test PKI used by the virtual SDCP driver.
 
 PKI structure:
   SDCP Virtual Test Root CA  (self-signed, CA:TRUE)
-       └── SDCP Virtual Test Model  (signed by Root CA, CA:FALSE)
+       ├── SDCP Virtual Test Model  (signed by Root CA, CA:FALSE)
+       ├── SDCP Virtual Test Model Expired  (signed by Root CA, CA:FALSE, expired)
+       ├── SDCP Virtual Test Model Non-Strict  (signed by Root CA, CA:FALSE, no AKI)
+       └── SDCP Virtual Test Intermediate CA  (signed by Root CA, CA:TRUE, path_length=0)
+                └── SDCP Virtual Test Model Partial Chain  (signed by Intermediate CA, CA:FALSE)
 
-The Root CA certificate is written to the driver's own CA store directory
-(drivers/virtual-sdcp/) so that it is compiled into the
-virtual-sdcp driver's GResource and supplied at runtime via the
-get_ca_store vfunc.  It is never part of the default SDCP CA store.
+Root CA and Intermediate CA PEM certificates are written to the driver's own
+CA store directory (drivers/virtual-sdcp/) so that they are compiled into the
+virtual-sdcp driver's GResource and supplied at runtime via the get_ca_store
+vfunc.  They are never part of the default SDCP CA store.
+
+The Non-Strict model certificate is missing the AuthorityKeyIdentifier
+extension; it passes normal X.509 verification but fails when
+X509_V_FLAG_X509_STRICT is in effect.  This is used to exercise the
+FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT driver flag.
+
+The Partial Chain model certificate is signed by the Intermediate CA.  When
+only the Intermediate CA (not the Root CA) is present in the trust store the
+chain cannot be completed to a self-signed root, so verification fails unless
+X509_V_FLAG_PARTIAL_CHAIN is set.  This is used to exercise the
+FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN driver flag.
+
 The model certificate's public key comes from
 SecureDeviceConnectionProtocol/src/test/testkeys.c.
 
@@ -25,8 +41,10 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
     EllipticCurvePrivateNumbers,
     EllipticCurvePublicNumbers,
     SECP256R1,
+    derive_private_key,
 )
 import datetime
+import hashlib
 import pathlib
 import sys
 
@@ -160,6 +178,109 @@ expired_model_cert = (
 expired_der = expired_model_cert.public_bytes(serialization.Encoding.DER)
 
 # ---------------------------------------------------------------------------
+# Build intermediate CA (signed by root CA, used for partial-chain tests)
+#
+# Key material is derived deterministically from a fixed seed so that
+# regenerating the PKI always yields the same bytes and the embedded hex
+# strings in virtual-sdcp.h stay stable.
+# ---------------------------------------------------------------------------
+
+n_p256_value = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+intermediate_ca_seed = hashlib.sha256(b"sdcp_virtual_test_intermediate_ca_key").digest()
+intermediate_ca_privkey_int = (int.from_bytes(intermediate_ca_seed, "big") % (n_p256_value - 1)) + 1
+
+inter_priv = derive_private_key(intermediate_ca_privkey_int, SECP256R1())
+inter_pub  = inter_priv.public_key()
+
+INTER_CA_CN   = "SDCP Virtual Test Intermediate CA"
+inter_ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, INTER_CA_CN)])
+
+inter_ca_cert = (
+    x509.CertificateBuilder()
+    .subject_name(inter_ca_name)
+    .issuer_name(root_ca_name)
+    .public_key(inter_pub)
+    .serial_number(10)
+    .not_valid_before(datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc))
+    .not_valid_after(datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc))
+    .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+    .add_extension(x509.SubjectKeyIdentifier.from_public_key(inter_pub), critical=False)
+    .add_extension(
+        x509.AuthorityKeyIdentifier.from_issuer_public_key(root_pub), critical=False
+    )
+    .add_extension(
+        x509.KeyUsage(
+            digital_signature=True, key_cert_sign=True, crl_sign=True,
+            content_commitment=False, key_encipherment=False,
+            data_encipherment=False, key_agreement=False,
+            encipher_only=False, decipher_only=False,
+        ),
+        critical=True,
+    )
+    .sign(root_priv, hashes.SHA256())
+)
+
+inter_der = inter_ca_cert.public_bytes(serialization.Encoding.DER)
+
+# ---------------------------------------------------------------------------
+# Build partial-chain model certificate (signed by the Intermediate CA)
+#
+# When only the Intermediate CA (not the Root CA) is in the trust store,
+# X509_verify_cert() fails because the chain cannot be completed to a
+# self-signed root.  Setting X509_V_FLAG_PARTIAL_CHAIN makes the Intermediate
+# CA a valid trust anchor and verification succeeds.
+# ---------------------------------------------------------------------------
+
+PARTIAL_MODEL_CN = "SDCP Virtual Test Model Partial Chain"
+
+partial_chain_model_cert = (
+    x509.CertificateBuilder()
+    .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, PARTIAL_MODEL_CN)]))
+    .issuer_name(inter_ca_name)
+    .public_key(model_pub)
+    .serial_number(11)
+    .not_valid_before(datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc))
+    .not_valid_after(datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .add_extension(x509.SubjectKeyIdentifier.from_public_key(model_pub), critical=False)
+    .add_extension(
+        x509.AuthorityKeyIdentifier.from_issuer_public_key(inter_pub), critical=False
+    )
+    .sign(inter_priv, hashes.SHA256())
+)
+
+partial_chain_model_der = partial_chain_model_cert.public_bytes(serialization.Encoding.DER)
+
+# ---------------------------------------------------------------------------
+# Build non-X509-strict model certificate (signed by root CA, no AKI)
+#
+# This certificate is identical to the standard model certificate except it
+# intentionally omits the AuthorityKeyIdentifier extension.  OpenSSL accepts
+# it in default mode but rejects it with X509_V_FLAG_X509_STRICT (error 85:
+# "Missing Authority Key Identifier").  Used to test the driver flag
+# FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT.
+# ---------------------------------------------------------------------------
+
+NON_X509_STRICT_MODEL_CN = "SDCP Virtual Test Model Non-Strict"
+
+non_x509_strict_model_cert = (
+    x509.CertificateBuilder()
+    .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, NON_X509_STRICT_MODEL_CN)]))
+    .issuer_name(root_ca_name)
+    .public_key(model_pub)
+    .serial_number(12)
+    .not_valid_before(datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc))
+    .not_valid_after(datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc))
+    .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+    .add_extension(x509.SubjectKeyIdentifier.from_public_key(model_pub), critical=False)
+    # Intentionally no AuthorityKeyIdentifier - passes without X509_STRICT,
+    # fails with X509_V_FLAG_X509_STRICT (error 85: Missing Authority Key Identifier)
+    .sign(root_priv, hashes.SHA256())
+)
+
+non_x509_strict_model_der = non_x509_strict_model_cert.public_bytes(serialization.Encoding.DER)
+
+# ---------------------------------------------------------------------------
 # Print C string literal for virtual-sdcp.h
 # ---------------------------------------------------------------------------
 
@@ -181,16 +302,34 @@ print("/* Paste into virtual-sdcp.h as expired_model_certificate_hex: */")
 print(f"static const gchar expired_model_certificate_hex[] = {expired_c_value};")
 print()
 
+partial_chain_hex_str = partial_chain_model_der.hex()
+partial_chain_padding = " " * 54
+partial_chain_chunks  = [f'"{partial_chain_hex_str[i:i+64]}"' for i in range(0, len(partial_chain_hex_str), 64)]
+partial_chain_c_value = ("\n" + partial_chain_padding).join(partial_chain_chunks)
+
+print("/* Paste into virtual-sdcp.h as partial_chain_model_certificate_hex: */")
+print(f"static const gchar partial_chain_model_certificate_hex[] = {partial_chain_c_value};")
+print()
+
+non_strict_hex_str = non_x509_strict_model_der.hex()
+non_strict_padding = " " * 56
+non_strict_chunks  = [f'"{non_strict_hex_str[i:i+64]}"' for i in range(0, len(non_strict_hex_str), 64)]
+non_strict_c_value = ("\n" + non_strict_padding).join(non_strict_chunks)
+
+print("/* Paste into virtual-sdcp.h as non_x509_strict_model_certificate_hex: */")
+print(f"static const gchar non_x509_strict_model_certificate_hex[] = {non_strict_c_value};")
+print()
+
 # ---------------------------------------------------------------------------
-# Write root CA PEM to CA store; remove the old self-signed model CA if present
+# Write CA PEM files; remove the old self-signed model CA if present
 # ---------------------------------------------------------------------------
 
 here = pathlib.Path(__file__).resolve().parent
 
-root_ca_pem_path = here / f"{ROOT_CA_CN}.pem"
-force_root_ca_regenerate = "--force-recreate-root-ca" in sys.argv
+force_recreate = "--force-recreate-root-ca" in sys.argv
 
-if root_ca_pem_path.exists() and not force_root_ca_regenerate:
+root_ca_pem_path = here / f"{ROOT_CA_CN}.pem"
+if root_ca_pem_path.exists() and not force_recreate:
     print(f"Root CA PEM already exists, not overwriting")
 else:
     root_ca_pem_path.write_text(
@@ -198,11 +337,20 @@ else:
     )
     print(f"Root CA PEM written to: {root_ca_pem_path.relative_to(here.parent.parent)}")
 
+inter_ca_pem_path = here / f"{INTER_CA_CN}.pem"
+if inter_ca_pem_path.exists() and not force_recreate:
+    print(f"Intermediate CA PEM already exists, not overwriting")
+else:
+    inter_ca_pem_path.write_text(
+        inter_ca_cert.public_bytes(serialization.Encoding.PEM).decode()
+    )
+    print(f"Intermediate CA PEM written to: {inter_ca_pem_path.relative_to(here.parent.parent)}")
+
 old_model_ca = here / "SDCP Virtual Test Model CA.pem"
 if old_model_ca.exists():
     old_model_ca.unlink()
     print(f"Removed old self-signed model CA: {old_model_ca.relative_to(here.parent.parent)}")
 print()
-print("Note: the Root CA PEM is compiled into the virtual-sdcp driver's GResource")
-print("via drivers/virtual-sdcp/ and supplied at runtime through the")
-print("get_ca_store vfunc.  It is never part of the default SDCP CA store.")
+print("Note: Root CA and Intermediate CA PEMs are compiled into the virtual-sdcp")
+print("driver's GResource via drivers/virtual-sdcp/ and supplied at runtime through")
+print("the get_ca_store vfunc. They are never part of the default SDCP CA store.")

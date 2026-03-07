@@ -42,6 +42,8 @@
 
 #include "virtual-sdcp.h"
 #include "virtual-sdcp-ca-store-resource.h"
+#include "virtual-sdcp-partial-chain-ca-store-resource.h"
+#include "virtual-sdcp-full-chain-ca-store-resource.h"
 
 struct _FpDeviceVirtualSdcp
 {
@@ -316,6 +318,42 @@ use_untrusted_certificate (void)
 }
 
 static inline gboolean
+use_non_x509_strict_certificate (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_NON_X509_STRICT_CERTIFICATE"), "1") == 0;
+}
+
+static inline gboolean
+use_non_x509_strict_verification (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_NON_X509_STRICT_VERIFICATION"), "1") == 0;
+}
+
+static inline gboolean
+use_partial_chain_certificate (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_PARTIAL_CHAIN_CERTIFICATE"), "1") == 0;
+}
+
+static inline gboolean
+use_partial_chain_ca_store (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_PARTIAL_CHAIN_CA_ONLY"), "1") == 0;
+}
+
+static inline gboolean
+use_full_chain_ca_store (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_FULL_CHAIN_CA_STORE"), "1") == 0;
+}
+
+static inline gboolean
+allow_partial_chain (void)
+{
+  return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_ALLOW_PARTIAL_CHAIN"), "1") == 0;
+}
+
+static inline gboolean
 use_deterministic_random (void)
 {
   return g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_DETERMINISTIC"), "1") == 0;
@@ -408,6 +446,10 @@ dev_connect (FpSdcpDevice *sdcp_device)
 
   if (use_expired_certificate ())
     model_certificate = expired_model_certificate_hex;
+  else if (use_non_x509_strict_certificate ())
+    model_certificate = non_x509_strict_model_certificate_hex;
+  else if (use_partial_chain_certificate ())
+    model_certificate = partial_chain_model_certificate_hex;
   else
     model_certificate = model_certificate_hex;
 
@@ -418,6 +460,12 @@ dev_connect (FpSdcpDevice *sdcp_device)
   if (connect_mac && use_expired_certificate () && allow_expired_certificate ())
     sdcp_cls->verification_flags |=
       FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME;
+  if (connect_mac && use_non_x509_strict_verification ())
+    sdcp_cls->verification_flags |=
+      FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT;
+  if (connect_mac && allow_partial_chain ())
+    sdcp_cls->verification_flags |=
+      FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN;
 
   fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, connect_mac, error);
   sdcp_cls->verification_flags = old_flags;
@@ -431,6 +479,12 @@ dev_get_ca_store (FpSdcpDevice *sdcp_device)
       fp_dbg ("FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE is set; not providing CA store.");
       return NULL;
     }
+
+  if (use_partial_chain_ca_store ())
+    return fpi_virtual_sdcp_partial_chain_ca_store_get_resource ();
+
+  if (use_full_chain_ca_store ())
+    return fpi_virtual_sdcp_full_chain_ca_store_get_resource ();
 
   return fpi_virtual_sdcp_ca_store_get_resource ();
 }
@@ -484,7 +538,18 @@ fpi_device_virtual_sdcp_finalize (GObject *object)
 static void
 fpi_device_virtual_sdcp_init (FpDeviceVirtualSdcp *self)
 {
+  static gsize initialized = FALSE;
+
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
+
+  if (g_once_init_enter (&initialized))
+    {
+      fpi_virtual_sdcp_ca_store_register_resource ();
+      fpi_virtual_sdcp_partial_chain_ca_store_register_resource ();
+      fpi_virtual_sdcp_full_chain_ca_store_register_resource ();
+
+      g_once_init_leave (&initialized, TRUE);
+    }
 
   self->print_ids = g_ptr_array_new_with_free_func ((GDestroyNotify) g_bytes_unref);
 }
@@ -530,6 +595,4 @@ fpi_device_virtual_sdcp_class_init (FpDeviceVirtualSdcpClass *klass)
 
   fpi_device_class_auto_initialize_features (dev_class);
   dev_class->features |= FP_DEVICE_FEATURE_STORAGE;
-
-  fpi_virtual_sdcp_ca_store_register_resource ();
 }

@@ -41,6 +41,28 @@
  *       openssl dgst -sha256 -hex <firmware.bin>
  *   - model_certificate_hex / expired_model_certificate_hex:
  *       run libfprint/drivers/virtual-sdcp/gen-virtual-sdcp-test-cert.py
+ *   - partial_chain_model_certificate_hex:
+ *       A model cert signed by the Intermediate CA instead of the Root CA.
+ *       The intermediate CA key is derived deterministically in the gen script;
+ *       export it to PEM first, then:
+ *         openssl x509 -req -in model.csr \
+ *           -CA "SDCP Virtual Test Intermediate CA.pem" -CAkey inter_ca.key \
+ *           -set_serial 11 -days 29220 \
+ *           -extfile <(printf "basicConstraints=CA:FALSE\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid") \
+ *           -out model_partial.pem
+ *         openssl x509 -in model_partial.pem -outform DER | xxd -p | tr -d '\n'
+ *   - non_x509_strict_model_certificate_hex:
+ *       a model cert signed by the Root CA with AuthorityKeyIdentifier
+ *       deliberately omitted (triggers OpenSSL error 85 under -x509_strict):
+ *         openssl x509 -req -in model.csr \
+ *           -CA "SDCP Virtual Test Root CA.pem" -CAkey root_ca.key \
+ *           -set_serial 12 -days 29220 \
+ *           -extfile <(printf "basicConstraints=CA:FALSE\nsubjectKeyIdentifier=hash") \
+ *           -out model_non_strict.pem
+ *         openssl x509 -in model_non_strict.pem -outform DER | xxd -p | tr -d '\n'
+ *       Verify it is rejected under strict mode and accepted without:
+ *         openssl verify -CAfile "SDCP Virtual Test Root CA.pem" -x509_strict model_non_strict.pem
+ *         openssl verify -CAfile "SDCP Virtual Test Root CA.pem" model_non_strict.pem
  *   - model_signature_hex / device_signature_hex:
  *       recompute with the Python generator or by signing with sk_m / sk_d
  *       (see signature coverage comments below)
@@ -76,6 +98,39 @@ static const gchar expired_model_certificate_hex[] = "3082018d30820133a003020102
                                                      "8648ce3d040302034800304502205ca95b6be59eb975b8aaf3278d725eb804ca"
                                                      "5d040c5f3cf9daa8090c4c2efaf6022100fefbe3fbbfe9cf280e7209ade444d8"
                                                      "19d98779ff702e5447080545b529af09de";
+/* partial-chain model certificate: signed by the Intermediate CA (not the Root CA);
+ * passes verification when X509_V_FLAG_PARTIAL_CHAIN is set (i.e. the Intermediate
+ * CA alone is trusted), fails otherwise */
+static const gchar partial_chain_model_certificate_hex[] = "3082019d30820143a00302010202010b300a06082a8648ce3d040302302c312a"
+                                                           "302806035504030c2153444350205669727475616c205465737420496e746572"
+                                                           "6d6564696174652043413020170d3230303130313030303030305a180f323039"
+                                                           "39303130313030303030305a3030312e302c06035504030c2553444350205669"
+                                                           "727475616c2054657374204d6f64656c205061727469616c20436861696e3059"
+                                                           "301306072a8648ce3d020106082a8648ce3d03010703420004c5eb2c24de08a4"
+                                                           "dd9cfd42c5bc5610277d492111f151bf33ad71ad9525401d00d9320976c3c839"
+                                                           "80fab279d04d1fc9f4196da4d68a2f3b6891189af231bf5088a350304e300c06"
+                                                           "03551d130101ff04023000301d0603551d0e041604149244cf70371e7e61c71a"
+                                                           "80d7066d20427162c1d3301f0603551d23041830168014f8c371ee82deab6f6a"
+                                                           "25485b5b5a6dd9a113f0cf300a06082a8648ce3d0403020348003045022030ac"
+                                                           "6835c08aefd845b7a2decb3bd955ba372fe7e8ab1a89b860105849dd27970221"
+                                                           "00ac5140921f76a4b9c2f9f777b15391796b4da0258de5212191ff5d43ce4e7f"
+                                                           "a4";
+/* non-X509-strict model certificate: signed by the Root CA but missing the
+ * AuthorityKeyIdentifier extension; passes normal verification but fails when
+ * X509_V_FLAG_X509_STRICT is set (OpenSSL error 85: Missing Authority Key
+ * Identifier).  Used to test FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT. */
+static const gchar non_x509_strict_model_certificate_hex[] = "3082017130820117a00302010202010c300a06082a8648ce3d04030230243122"
+                                                             "302006035504030c1953444350205669727475616c205465737420526f6f7420"
+                                                             "43413020170d3230303130313030303030305a180f3230393930313031303030"
+                                                             "3030305a302d312b302906035504030c2253444350205669727475616c205465"
+                                                             "7374204d6f64656c204e6f6e2d5374726963743059301306072a8648ce3d0201"
+                                                             "06082a8648ce3d03010703420004c5eb2c24de08a4dd9cfd42c5bc5610277d49"
+                                                             "2111f151bf33ad71ad9525401d00d9320976c3c83980fab279d04d1fc9f4196d"
+                                                             "a4d68a2f3b6891189af231bf5088a32f302d300c0603551d130101ff04023000"
+                                                             "301d0603551d0e041604149244cf70371e7e61c71a80d7066d20427162c1d330"
+                                                             "0a06082a8648ce3d04030203480030450221008efa46ef0ec72ed59ee388851d"
+                                                             "7d7c4b13e8dd50b5d4645df535b21588a2c63b0220115c779319c965377eac19"
+                                                             "31069651a0973ce6dce6d40b3fa0aaf62f5a05b31c";
 static const gchar device_public_key_hex[]   = "04840f109357fbf397e44c895cbfaff6b27527866828c94353120941b6020b1d"
                                                "be75ffd7b22b7ee2b7a57e8e89007f06eee43b7b8fceb382f8a6e78b812ed43"
                                                "7f9";

@@ -75,6 +75,24 @@ class VirtualSDCPBase(unittest.TestCase):
     def use_untrusted_certificate(self):
         self.set_env('FP_VIRTUAL_SDCP_UNTRUSTED_CERTIFICATE')
 
+    def use_non_x509_strict_certificate(self):
+        self.set_env('FP_VIRTUAL_SDCP_NON_X509_STRICT_CERTIFICATE')
+
+    def allow_non_x509_strict_certificate(self):
+        self.set_env('FP_VIRTUAL_SDCP_NON_X509_STRICT_VERIFICATION')
+
+    def use_partial_chain_certificate(self):
+        self.set_env('FP_VIRTUAL_SDCP_PARTIAL_CHAIN_CERTIFICATE')
+
+    def use_partial_chain_ca_store(self):
+        self.set_env('FP_VIRTUAL_SDCP_PARTIAL_CHAIN_CA_ONLY')
+
+    def use_full_chain_ca_store(self):
+        self.set_env('FP_VIRTUAL_SDCP_FULL_CHAIN_CA_STORE')
+
+    def allow_partial_chain(self):
+        self.set_env('FP_VIRTUAL_SDCP_ALLOW_PARTIAL_CHAIN')
+
     def use_deterministic_random(self):
         self.set_env('FP_VIRTUAL_SDCP_DETERMINISTIC')
         self.set_env('FP_SDCP_FIXED_RANDOM')
@@ -89,6 +107,35 @@ class VirtualSDCPOpen(VirtualSDCPBase):
     def test_connect_succeeds_with_allowed_expired_certificate(self):
         self.use_expired_certificate()
         self.allow_expired_certificate()
+
+        self.dev.open_sync()
+
+    def test_connect_succeeds_with_compliant_certificate_and_strict_validation_by_default(self):
+        self.dev.open_sync()
+
+    def test_connect_succeeds_with_non_x509_strict_certificate_with_non_x509_strict_verification(self):
+        self.use_non_x509_strict_certificate()
+        self.allow_non_x509_strict_certificate()
+
+        self.dev.open_sync()
+
+    def test_connect_succeeds_with_partial_chain_certificate_and_allow_partial_chain(self):
+        self.use_partial_chain_certificate()
+        self.use_partial_chain_ca_store()
+        self.allow_partial_chain()
+
+        self.dev.open_sync()
+
+    def test_connect_succeeds_with_partial_chain_certificate_and_full_chain_ca_store(self):
+        self.use_partial_chain_certificate()
+        self.use_full_chain_ca_store()
+
+        self.dev.open_sync()
+
+    def test_connect_succeeds_with_partial_chain_certificate_and_full_chain_ca_store_and_allow_partial_chain(self):
+        self.use_partial_chain_certificate()
+        self.use_full_chain_ca_store()
+        self.allow_partial_chain()
 
         self.dev.open_sync()
 
@@ -113,6 +160,40 @@ class VirtualSDCPOpenFailures(VirtualSDCPBase):
 
     def test_fails_to_open_if_device_certificate_is_expired(self):
         self.use_expired_certificate()
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_fails_to_open_if_non_x509_strict_certificate_rejected_by_default(self):
+        self.use_non_x509_strict_certificate()
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_fails_to_open_if_partial_chain_certificate_without_allow_partial_chain(self):
+        self.use_partial_chain_certificate()
+        self.use_partial_chain_ca_store()
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_fails_to_open_if_partial_chain_certificate_with_root_only_ca_store(self):
+        self.use_partial_chain_certificate()
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_fails_to_open_if_partial_chain_certificate_with_root_only_ca_store_and_allow_partial_chain(self):
+        self.use_partial_chain_certificate()
+        self.allow_partial_chain()
 
         with self.assertRaises(GLib.Error) as error:
             self.dev.open_sync()

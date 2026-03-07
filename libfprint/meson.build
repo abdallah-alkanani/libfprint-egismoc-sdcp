@@ -168,8 +168,28 @@ virtual_sdcp_ca_store_resource = gnome.compile_resources(
     extra_args: ['--manual-register'],
 )
 
+virtual_sdcp_full_chain_ca_store_resource = gnome.compile_resources(
+    'virtual-sdcp-full-chain-ca-store-resource',
+    'drivers/virtual-sdcp/virtual-sdcp-full-chain-ca-store.gresource.xml',
+    source_dir: 'drivers/virtual-sdcp',
+    c_name: 'fpi_virtual_sdcp_full_chain_ca_store',
+    extra_args: ['--manual-register'],
+)
+
+virtual_sdcp_partial_chain_ca_store_resource = gnome.compile_resources(
+    'virtual-sdcp-partial-chain-ca-store-resource',
+    'drivers/virtual-sdcp/virtual-sdcp-partial-chain-ca-store.gresource.xml',
+    source_dir: 'drivers/virtual-sdcp',
+    c_name: 'fpi_virtual_sdcp_partial_chain_ca_store',
+    extra_args: ['--manual-register'],
+)
+
 driver_generated_sources = {
-    'virtual_sdcp' : virtual_sdcp_ca_store_resource,
+    'virtual_sdcp' : [
+        virtual_sdcp_ca_store_resource,
+        virtual_sdcp_full_chain_ca_store_resource,
+        virtual_sdcp_partial_chain_ca_store_resource,
+    ],
 }
 
 helper_sources = {
