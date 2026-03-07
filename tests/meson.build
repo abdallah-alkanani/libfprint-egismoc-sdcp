@@ -10,6 +10,10 @@ envs.set('G_TEST_SRCDIR', meson.current_source_dir())
 envs.set('G_TEST_BUILDDIR', meson.current_build_dir())
 envs.prepend('LD_LIBRARY_PATH', meson.project_build_root() / 'libfprint')
 
+if get_option('tod')
+    envs.prepend('LD_LIBRARY_PATH', meson.project_build_root() / 'libfprint' / 'tod')
+endif
+
 # Set FP_DEVICE_EMULATION so that drivers can adapt (e.g. to use fixed
 # random numbers rather than proper ones)
 envs.set('FP_DEVICE_EMULATION', '1')
