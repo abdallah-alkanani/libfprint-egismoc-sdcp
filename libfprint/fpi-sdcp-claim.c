@@ -24,6 +24,7 @@
 
 #include "fpi-sdcp-claim.h"
 #include "fpi-sdcp-device.h"
+#include "fpi-sdcp.h"
 
 #include <openssl/evp.h>
 #include <openssl/err.h>
@@ -32,22 +33,6 @@ G_DEFINE_BOXED_TYPE (FpiSdcpClaim, fpi_sdcp_claim, fpi_sdcp_claim_copy, fpi_sdcp
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (EVP_MD_CTX, EVP_MD_CTX_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (EVP_MD, EVP_MD_free)
-
-static void
-print_openssl_errors (void)
-{
-  if (g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, G_LOG_DOMAIN))
-    return;
-
-  gulong e = 0;
-
-  e = ERR_get_error ();
-  while (e != 0)
-    {
-      fp_dbg ("OpenSSL error: %s", ERR_error_string (e, NULL));
-      e = ERR_get_error ();
-    }
-}
 
 /**
  * fpi_sdcp_claim_new:
@@ -168,10 +153,9 @@ fpi_sdcp_claim_hash (FpiSdcpClaim *claim,
 
   if (!EVP_DigestInit_ex (sh256_ctx, sha256, NULL))
     {
-      g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                          "OpenSSL error initializing SHA256 for "
-                                                          "SDCP claim hash"));
-      print_openssl_errors ();
+      g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                        "OpenSSL error initializing SHA256 for "
+                                                        "SDCP claim hash"));
       return NULL;
     }
 
@@ -182,10 +166,9 @@ fpi_sdcp_claim_hash (FpiSdcpClaim *claim,
 
       if (!EVP_DigestUpdate (sh256_ctx, data, data_size))
         {
-          g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                              "OpenSSL error hashing SDCP claim "
-                                                              "field '%s'", fields[i].name));
-          print_openssl_errors ();
+          g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                            "OpenSSL error hashing SDCP claim "
+                                                            "field '%s'", fields[i].name));
           return NULL;
         }
     }
@@ -193,9 +176,8 @@ fpi_sdcp_claim_hash (FpiSdcpClaim *claim,
   hash = g_malloc0 (EVP_MAX_MD_SIZE);
   if (!EVP_DigestFinal_ex (sh256_ctx, hash, &hash_len))
     {
-      g_propagate_error (error, fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                          "OpenSSL error finalizing SDCP claim hash"));
-      print_openssl_errors ();
+      g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                        "OpenSSL error finalizing SDCP claim hash"));
       return NULL;
     }
 

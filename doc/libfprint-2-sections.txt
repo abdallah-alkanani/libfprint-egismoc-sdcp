@@ -403,6 +403,7 @@ fpi_sdcp_claim_hash
 <SECTION>
 <FILE>fpi-sdcp</FILE>
 <TITLE>SDCP Cryptographic Operations</TITLE>
+fpi_sdcp_error_new_msg
 fpi_sdcp_generate_host_key
 fpi_sdcp_generate_random
 fpi_sdcp_verify_certificate

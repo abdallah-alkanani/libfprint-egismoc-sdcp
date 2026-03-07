@@ -216,3 +216,19 @@ gboolean fpi_sdcp_verify_certificate (GBytes                        *x509_certif
                                       GResource                     *additional_trust_store,
                                       FpiDeviceSdcpVerificationFlags verification_flags,
                                       GError                       **error);
+
+/**
+ * fpi_sdcp_error_new_msg:
+ * @error_code: The #FpDeviceError code for the new error
+ * @format: A printf-style format string for the error message
+ * @...: Format arguments
+ *
+ * Creates a new #GError in the %FP_DEVICE_ERROR domain with the given @error_code.
+ * If there is a pending OpenSSL error, its string representation is appended to
+ * @format; the OpenSSL error stack is drained unconditionally.
+ *
+ * Returns: (transfer full): A newly allocated #GError
+ **/
+GError *fpi_sdcp_error_new_msg (FpDeviceError error_code,
+                                const gchar  *format,
+                                ...) G_GNUC_PRINTF (2, 3);
