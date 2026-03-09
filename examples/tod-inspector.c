@@ -21,6 +21,7 @@
 #include <libfprint/fprint.h>
 
 #include "libfprint/tod/tod-shared-loader.h"
+#include "libfprint/fpi-sdcp-device.h"
 #include "libfprint/fpi-image-device.h"
 #include "libfprint/fpi-device.h"
 
@@ -171,6 +172,22 @@ main (void)
           g_print ("  Image activate: %s\n", image_cls->activate ? "true" : "false");
           g_print ("  Image change_state: %s\n", image_cls->change_state ? "true" : "false");
           g_print ("  Image deactivate: %s\n", image_cls->deactivate ? "true" : "false");
+        }
+
+      if (g_type_is_a (driver, FP_TYPE_SDCP_DEVICE))
+        {
+          FpSdcpDeviceClass *sdcp_cls = FP_SDCP_DEVICE_CLASS (cls);
+          g_autofree char *verification_flags = NULL;
+
+          verification_flags = g_flags_to_string (fpi_device_sdcp_verification_flags_get_type (),
+                                                  sdcp_cls->verification_flags);
+
+          g_print ("  SDCP Verification Flags: %s\n", verification_flags);
+          g_print ("  SDCP get_ca_store: %s\n", sdcp_cls->get_ca_store ? "true" : "false");
+          g_print ("  SDCP connect: %s\n", sdcp_cls->connect ? "true" : "false");
+          g_print ("  SDCP reconnect: %s\n", sdcp_cls->reconnect ? "true" : "false");
+          g_print ("  SDCP list: %s\n", sdcp_cls->list ? "true" : "false");
+          g_print ("  SDCP enroll_commit: %s\n", sdcp_cls->enroll_commit ? "true" : "false");
         }
 
       if (i < shared_drivers->len - 1)
