@@ -21,6 +21,8 @@
 #pragma once
 
 #include "fpi-device.h"
+#include "fpi-enums.h"
+
 #include "fpi-sdcp-claim.h"
 #include "fp-sdcp-device.h"
 #include "tod/tod-macros.h"
