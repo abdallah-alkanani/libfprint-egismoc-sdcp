@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <glib-object.h>
 #include <libfprint/fprint.h>
 
 #include "libfprint/tod/tod-shared-loader.h"
@@ -122,6 +123,7 @@ main (void)
     {
       GType driver = g_array_index (shared_drivers, GType, i);
       g_autoptr(FpDeviceClass) cls = g_type_class_ref (driver);
+      GObjectClass *object_cls = G_OBJECT_CLASS (cls);
       g_autofree char *id_table = NULL;
       g_autofree char *features = NULL;
 
@@ -131,6 +133,8 @@ main (void)
       g_print ("ID: %s\n", cls->id);
       g_print ("Full Name: %s\n", cls->full_name);
       g_print ("Type: %s\n", device_type_to_string (cls->type));
+      g_print ("Type name: %s\n", g_type_name (object_cls->g_type_class.g_type));
+      g_print ("Base type: %s\n", g_type_name (g_type_parent (object_cls->g_type_class.g_type)));
       g_print ("Enroll stages: %d\n", cls->nr_enroll_stages);
       g_print ("Scan type: %s\n", scan_type_to_string (cls->scan_type));
       g_print ("Seconds to get Hot: %d\n", cls->temp_hot_seconds);
