@@ -274,6 +274,7 @@ endif
 if 'sdcp' in driver_helpers
     unit_tests += [
         'fpi-sdcp',
+        'fp-sdcp-device',
     ]
 
     if installed_tests
