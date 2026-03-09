@@ -21,6 +21,7 @@
 #include <libfprint/fprint.h>
 
 #include "libfprint/tod/tod-shared-loader.h"
+#include "libfprint/fpi-image-device.h"
 #include "libfprint/fpi-device.h"
 
 static char *
@@ -156,6 +157,21 @@ main (void)
       g_print ("  delete: %s\n", cls->delete ? "true" : "false");
       g_print ("  clear_storage: %s\n", cls->clear_storage ? "true" : "false");
       g_print ("  cancel: %s\n", cls->cancel ? "true" : "false");
+
+      if (g_type_is_a (driver, FP_TYPE_IMAGE_DEVICE))
+        {
+          FpImageDeviceClass *image_cls = FP_IMAGE_DEVICE_CLASS (cls);
+
+          g_print ("  Image bz3 threshold: %d\n", image_cls->bz3_threshold);
+          g_print ("  Image width: %d\n", image_cls->img_width);
+          g_print ("  Image height: %d\n", image_cls->img_height);
+
+          g_print ("  Image img_open: %s\n", image_cls->img_open ? "true" : "false");
+          g_print ("  Image img_close: %s\n", image_cls->img_close ? "true" : "false");
+          g_print ("  Image activate: %s\n", image_cls->activate ? "true" : "false");
+          g_print ("  Image change_state: %s\n", image_cls->change_state ? "true" : "false");
+          g_print ("  Image deactivate: %s\n", image_cls->deactivate ? "true" : "false");
+        }
 
       if (i < shared_drivers->len - 1)
         g_print ("------------\n");
