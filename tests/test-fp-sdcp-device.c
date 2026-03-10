@@ -490,7 +490,7 @@ test_sdcp_device_identify_fails_wrong_label (void)
   g_autoptr(GError) error = NULL;
   g_autoptr(FpPrint) enrolled = NULL;
   g_autoptr(GPtrArray) gallery = NULL;
-  FpPrint *match = NULL;
+  g_autoptr(FpPrint) match = NULL;
 
   g_setenv ("FP_VIRTUAL_SDCP_IDENTIFY_LABEL", "other identify label", TRUE);
 

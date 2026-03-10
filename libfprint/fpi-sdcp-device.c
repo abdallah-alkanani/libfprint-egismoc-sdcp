@@ -547,6 +547,10 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
           g_clear_pointer (&mac, g_bytes_unref);
         }
 
+      fp_warn ("SDCP Reconnect failed with error: %s. Falling back to full connect.",
+               error->message);
+      g_clear_error (&error);
+
       /* Silently try a normal connect instead. */
       fpi_sdcp_device_connect (self);
     }
