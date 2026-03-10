@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "fpi-print.h"
 #define FP_COMPONENT "print"
 #include "fpi-log.h"
 
@@ -247,6 +248,51 @@ fpi_print_bz3_match (FpPrint *template, FpPrint *print, gint bz3_threshold, GErr
     }
 
   return FPI_MATCH_FAIL;
+}
+
+/**
+ * fpi_print_sdcp_get_id:
+ * @print: an SDCP #FpPrint
+ *
+ * Gets the SDCP enrollment ID from @print.
+ *
+ * The print must be of type %FPI_PRINT_SDCP or %FPI_PRINT_UNDEFINED.
+ * Returns %NULL if the ID has not been set yet.
+ *
+ * Returns: (transfer full) (nullable): the SDCP enrollment ID, or %NULL
+ */
+GBytes *
+fpi_print_sdcp_get_id (FpPrint *print)
+{
+  g_return_val_if_fail (FP_IS_PRINT (print), NULL);
+  g_return_val_if_fail (print->type == FPI_PRINT_UNDEFINED || print->type == FPI_PRINT_SDCP, NULL);
+
+  return print->sdcp_id ? g_bytes_ref (print->sdcp_id) : NULL;
+}
+
+/**
+ * fpi_print_sdcp_set_id:
+ * @print: an SDCP #FpPrint
+ * @id: the enrollment ID to set
+ *
+ * Sets the SDCP enrollment ID in @print.
+ *
+ * The print must be of type %FPI_PRINT_SDCP.
+ */
+void
+fpi_print_sdcp_set_id (FpPrint *print,
+                       GBytes  *id)
+{
+  g_return_if_fail (FP_IS_PRINT (print));
+  g_return_if_fail (print->type == FPI_PRINT_UNDEFINED || print->type == FPI_PRINT_SDCP);
+  g_return_if_fail (id != NULL);
+
+  if (print->sdcp_id == id)
+    return;
+
+  g_clear_pointer (&print->sdcp_id, g_bytes_unref);
+  print->sdcp_id = g_bytes_ref (id);
+  g_object_notify (G_OBJECT (print), "fpi-sdcp-id");
 }
 
 /**

@@ -62,6 +62,7 @@ enum {
   PROP_FPI_TYPE,
   PROP_FPI_DATA,
   PROP_FPI_PRINTS,
+  PROP_FPI_SDCP_ID,
   N_PROPS
 };
 
@@ -80,6 +81,7 @@ fp_print_finalize (GObject *object)
   g_clear_pointer (&self->enroll_date, g_date_free);
   g_clear_pointer (&self->data, g_variant_unref);
   g_clear_pointer (&self->prints, g_ptr_array_unref);
+  g_clear_pointer (&self->sdcp_id, g_bytes_unref);
 
   G_OBJECT_CLASS (fp_print_parent_class)->finalize (object);
 }
@@ -136,6 +138,10 @@ fp_print_get_property (GObject    *object,
 
     case PROP_FPI_PRINTS:
       g_value_set_pointer (value, self->prints);
+      break;
+
+    case PROP_FPI_SDCP_ID:
+      g_value_take_boxed (value, fpi_print_sdcp_get_id (self));
       break;
 
     default:
@@ -196,6 +202,10 @@ fp_print_set_property (GObject      *object,
     case PROP_FPI_PRINTS:
       g_clear_pointer (&self->prints, g_ptr_array_unref);
       self->prints = g_value_get_pointer (value);
+      break;
+
+    case PROP_FPI_SDCP_ID:
+      fpi_print_sdcp_set_id (self, g_value_get_boxed (value));
       break;
 
     default:
@@ -321,6 +331,22 @@ fp_print_class_init (FpPrintClass *klass)
                           "Prints",
                           "Prints for internal use only",
                           G_PARAM_STATIC_STRINGS | G_PARAM_READWRITE);
+
+  /**
+   * FpPrint::fpi-sdcp-id: (skip)
+   *
+   * This property is only for internal purposes. Only valid for prints of
+   * type %FPI_PRINT_SDCP; accessing it on a different type will trigger a
+   * critical warning and return %NULL.
+   *
+   * Stability: private
+   */
+  properties[PROP_FPI_SDCP_ID] =
+    g_param_spec_boxed ("fpi-sdcp-id",
+                        "SDCP Print ID",
+                        "Private: The SDCP enrollment ID stored in this print",
+                        G_TYPE_BYTES,
+                        G_PARAM_STATIC_STRINGS | G_PARAM_READWRITE);
 
   g_object_class_install_properties (object_class, N_PROPS, properties);
 }
@@ -605,9 +631,13 @@ fp_print_equal (FpPrint *self, FpPrint *other)
   if (g_strcmp0 (self->device_id, other->device_id))
     return FALSE;
 
-  if (self->type == FPI_PRINT_RAW || self->type == FPI_PRINT_SDCP)
+  if (self->type == FPI_PRINT_RAW)
     {
       return g_variant_equal (self->data, other->data);
+    }
+  else if (self->type == FPI_PRINT_SDCP)
+    {
+      return g_bytes_equal (self->sdcp_id, other->sdcp_id);
     }
   else if (self->type == FPI_PRINT_NBIS)
     {
@@ -680,7 +710,7 @@ fp_print_serialize (FpPrint *print,
   g_variant_builder_open (&builder, G_VARIANT_TYPE_VARDICT);
   g_variant_builder_close (&builder);
 
-  /* Insert NBIS print data for type NBIS, otherwise the GVariant directly */
+  /* Insert NBIS print data for type NBIS, SDCP ID for type SDCP, otherwise the GVariant directly */
   if (print->type == FPI_PRINT_NBIS)
     {
       GVariantBuilder nested = G_VARIANT_BUILDER_INIT (G_VARIANT_TYPE ("(a(aiaiai))"));
@@ -713,6 +743,19 @@ fp_print_serialize (FpPrint *print,
 
       g_variant_builder_close (&nested);
       g_variant_builder_add (&builder, "v", g_variant_builder_end (&nested));
+    }
+  else if (print->type == FPI_PRINT_SDCP)
+    {
+      const guint8 *id_data = NULL;
+      gsize id_size = 0;
+      GVariant *id_var;
+
+      if (print->sdcp_id)
+        id_data = g_bytes_get_data (print->sdcp_id, &id_size);
+
+      id_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, id_data, id_size, 1);
+      g_variant_builder_add (&builder, "v",
+                             g_variant_new_variant (g_variant_new ("(@ay)", id_var)));
     }
   else
     {
@@ -829,12 +872,13 @@ fp_print_deserialize (const guchar *data,
         guint i;
 
         result = g_object_new (FP_TYPE_PRINT,
+                               "fpi-type", FPI_PRINT_NBIS,
                                "driver", driver,
                                "device-id", device_id,
                                "device-stored", device_stored,
                                NULL);
         g_object_ref_sink (result);
-        fpi_print_set_type (result, FPI_PRINT_NBIS);
+
         for (i = 0; i < g_variant_n_children (prints); i++)
           {
             g_autofree struct xyt_struct *xyt = NULL;
@@ -875,7 +919,6 @@ fp_print_deserialize (const guchar *data,
       break;
 
     case FPI_PRINT_RAW:
-    case FPI_PRINT_SDCP:
       {
         g_autoptr(GVariant) fp_data = g_variant_get_child_value (print_data, 0);
 
@@ -887,6 +930,31 @@ fp_print_deserialize (const guchar *data,
                                "fpi-data", fp_data,
                                NULL);
         g_object_ref_sink (result);
+      }
+      break;
+
+    case FPI_PRINT_SDCP:
+      {
+        g_autoptr(GVariant) fp_data = g_variant_get_child_value (print_data, 0);
+
+        result = g_object_new (FP_TYPE_PRINT,
+                               "fpi-type", FPI_PRINT_SDCP,
+                               "driver", driver,
+                               "device-id", device_id,
+                               "device-stored", device_stored,
+                               NULL);
+        g_object_ref_sink (result);
+
+        if (g_variant_check_format_string (fp_data, "(@ay)", FALSE))
+          {
+            g_autoptr(GVariant) id_var = NULL;
+            const guint8 *id_data;
+            gsize id_len;
+
+            g_variant_get (fp_data, "(@ay)", &id_var);
+            id_data = g_variant_get_fixed_array (id_var, &id_len, sizeof (guint8));
+            result->sdcp_id = g_bytes_new (id_data, id_len);
+          }
       }
       break;
 

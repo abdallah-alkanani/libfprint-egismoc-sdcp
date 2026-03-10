@@ -200,8 +200,3 @@ void fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
                                         GBytes       *id,
                                         GBytes       *mac,
                                         GError       *error);
-
-void fpi_sdcp_device_get_print_id (FpPrint *print,
-                                   GBytes **id);
-void fpi_sdcp_device_set_print_id (FpPrint *print,
-                                   GBytes  *id);

@@ -43,4 +43,5 @@ struct _FpPrint
 
   GVariant  *data;
   GPtrArray *prints;
+  GBytes    *sdcp_id;
 };

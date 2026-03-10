@@ -54,4 +54,9 @@ gchar *  fpi_print_generate_user_id (FpPrint *print);
 gboolean fpi_print_fill_from_user_id (FpPrint    *print,
                                       const char *user_id);
 
+/* SDCP print helpers. */
+GBytes * fpi_print_sdcp_get_id (FpPrint *print);
+void     fpi_print_sdcp_set_id (FpPrint *print,
+                                GBytes  *id);
+
 G_END_DECLS

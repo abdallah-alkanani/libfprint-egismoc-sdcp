@@ -609,7 +609,7 @@ fpi_sdcp_device_list_complete (FpSdcpDevice *self,
       FpPrint *print = fp_print_new (FP_DEVICE (self));
       fpi_print_set_type (print, FPI_PRINT_SDCP);
       fpi_print_set_device_stored (print, FALSE);
-      fpi_sdcp_device_set_print_id (print, g_ptr_array_index (ids, i));
+      fpi_print_sdcp_set_id (print, g_ptr_array_index (ids, i));
       g_ptr_array_add (prints, g_object_ref_sink (print));
     }
 
@@ -664,7 +664,7 @@ fpi_sdcp_device_enroll_commit (FpSdcpDevice *self,
   fpi_print_set_device_stored (print, FALSE);
 
   /* Attach the ID to the print */
-  fpi_sdcp_device_set_print_id (print, id);
+  fpi_print_sdcp_set_id (print, id);
 
   cls->enroll_commit (self, id);
 
@@ -697,7 +697,7 @@ fpi_sdcp_device_enroll_commit_complete (FpSdcpDevice *self,
 
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
 
-  fpi_sdcp_device_get_print_id (print, &id);
+  id = fpi_print_sdcp_get_id (print);
   if (!id)
     {
       g_error ("Inconsistent state; the print must have the enrolled ID attached at this point");
@@ -817,7 +817,7 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
   fpi_print_set_device_stored (identified_print, FALSE);
 
   /* Attach the ID to the print */
-  fpi_sdcp_device_set_print_id (identified_print, id);
+  fpi_print_sdcp_set_id (identified_print, id);
 
 
   /* The surrounding API expects a match/no-match against a given set. */
@@ -858,75 +858,6 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
       fpi_device_identify_complete (FP_DEVICE (self), NULL);
     }
 }
-
-/**
- * fpi_sdcp_device_get_print_id:
- * @print: an SDCP device #FpPrint
- * @id: (out) (transfer full): the ID gotten from the @print data
- *
- * Gets the SDCP enrollment ID from the @print data.
- *
- * The returned @id may be %NULL if the data was not set or in the wrong format.
- */
-void
-fpi_sdcp_device_get_print_id (FpPrint *print,
-                              GBytes **id)
-{
-  g_autoptr(GVariant) id_var = NULL;
-  g_autoptr(GVariant) data = NULL;
-  const guint8 *id_data;
-  gsize id_len;
-
-  g_return_if_fail (print);
-  g_return_if_fail (*id == NULL);
-
-  g_object_get (G_OBJECT (print), "fpi-data", &data, NULL);
-
-  if (!data)
-    {
-      fp_warn ("SDCP print data has not been set.");
-      return;
-    }
-
-  if (!g_variant_check_format_string (data, "(@ay)", FALSE))
-    {
-      fp_warn ("SDCP print data is not in expected format.");
-      return;
-    }
-
-  g_variant_get (data, "(@ay)", &id_var);
-
-  id_data = g_variant_get_fixed_array (id_var, &id_len, sizeof (guint8));
-
-  *id = g_bytes_new (id_data, id_len);
-}
-
-/**
- * fpi_sdcp_device_set_print_id:
- * @print: an SDCP device #FpPrint
- * @id: the ID to set in the @print data
- *
- * Sets the SDCP enrollment ID in the @print data.
- */
-void
-fpi_sdcp_device_set_print_id (FpPrint *print,
-                              GBytes  *id)
-{
-  GVariant *id_var;
-  GVariant *data;
-
-  g_return_if_fail (print);
-  g_return_if_fail (id);
-
-  id_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
-                                      g_bytes_get_data (id, NULL),
-                                      g_bytes_get_size (id),
-                                      1);
-  data = g_variant_new ("(@ay)", id_var);
-
-  g_object_set (G_OBJECT (print), "fpi-data", data, NULL);
-}
-
 
 #ifdef TOD_LIBRARY
 #include "tod/tod-fpi-sdcp-device.c"
