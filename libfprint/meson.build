@@ -1,7 +1,7 @@
 spi_sources = []
 spi_headers = []
 
-if enabled_spi_drivers.length() > 0
+if enabled_spi_drivers.length() > 0 or get_option('tod')
   spi_headers = ['fpi-spi-transfer.h']
   spi_sources = ['fpi-spi-transfer.c']
 endif
