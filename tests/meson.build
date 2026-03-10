@@ -443,9 +443,11 @@ endif
 if get_option('tod')
     tod_test_driver_name = 'fake_test_dev_tod'
     tod_ssm_test_driver_name = 'ssm_test_dev_tod'
+    tod_sdcp_test_driver_name = 'virtual_sdcp_tod'
     tod_envs = envs
     tod_envs.set('FP_TOD_KEEP_MODULES_OPEN', 'TRUE')
     tod_envs.set('FP_VIRTUAL_FAKE_DEVICE', 'yes')
+    tod_envs.set('FP_VIRTUAL_SDCP_TOD', 'yes')
     tod_envs.set('FP_TOD_TEST_DRIVER_NAME', tod_test_driver_name)
     tod_envs.prepend('LD_LIBRARY_PATH',
         meson.project_build_root() / 'libfprint',
@@ -546,6 +548,20 @@ if get_option('tod')
                     'depends': fake_driver,
                 }
             }
+
+            if tod_version.version_compare('>= v1+1.95.0')
+                tod_driver_infos += {
+                    tod_sdcp_test_driver_name + '_' + tod_version: {
+                        'tod-driver': tod_sdcp_test_driver_name,
+                        'tod-dir': tod_dir,
+                        'supported-tests': [
+                            'fp-context-tod',
+                            'fp-sdcp-device',
+                        ],
+                        'depends': fake_driver,
+                    }
+                }
+            endif
 
             if installed_tests
                 install_subdir(tod_dir,
