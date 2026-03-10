@@ -463,10 +463,6 @@ if get_option('tod')
             'test-device-fake-tod.c',
         ],
         c_args: tod_c_args,
-        link_with: [
-            libfprint_tod,
-        ],
-        include_directories: include_directories('../libfprint'),
         dependencies: deps,
         install: installed_tests,
         install_dir: installed_tests_execdir / 'tod-drivers' / 'current',

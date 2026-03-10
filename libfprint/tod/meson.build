@@ -71,6 +71,7 @@ libfprint_tod = shared_library(versioned_libname.split('lib')[1] + '-tod',
     install: true)
 
 tod_dep = declare_dependency(
+    include_directories: include_directories('..'),
     link_with: [
         libfprint_tod,
         libfprint_tod_private,
