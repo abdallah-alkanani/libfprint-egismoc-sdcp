@@ -17,13 +17,58 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <gio/gio.h>
+#include <gio/gunixsocketaddress.h>
+
 #include <libfprint/fprint.h>
 
+#include "glib/gstdio.h"
 #include "test-utils.h"
 
 #ifdef TEST_TOD_DRIVER
 #include "test-utils-tod.h"
 #endif
+
+/* Connect to the SDCP events Unix socket at @path. */
+static GSocket *
+connect_events_socket (const char *path)
+{
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GSocketAddress) addr = g_unix_socket_address_new (path);
+  GSocket *sock;
+
+  sock = g_socket_new (G_SOCKET_FAMILY_UNIX, G_SOCKET_TYPE_STREAM, 0, &error);
+  g_assert_no_error (error);
+
+  g_socket_connect (sock, addr, NULL, &error);
+  g_assert_no_error (error);
+
+  return sock;
+}
+
+static char *
+read_events (GSocket *sock)
+{
+  GString *result = g_string_new (NULL);
+
+  /* Let the driver flush its pending_events queue to the socket. */
+  while (g_main_context_iteration (NULL, FALSE))
+    ;
+
+  /* Read all available data; 200 ms timeout per chunk so we stop cleanly. */
+  while (g_socket_condition_timed_wait (sock, G_IO_IN,
+                                        200 * G_TIME_SPAN_MILLISECOND,
+                                        NULL, NULL))
+    {
+      char buf[256];
+      gssize n = g_socket_receive (sock, buf, sizeof (buf), NULL, NULL);
+      if (n <= 0)
+        break;
+      g_string_append_len (result, buf, n);
+    }
+
+  return g_string_free (result, FALSE);
+}
 
 static FptContext *
 sdcp_context_new (void)
@@ -265,53 +310,61 @@ test_sdcp_device_reconnect_not_supported (void)
 }
 
 static void
-reconnect_log_handler (const gchar   *log_domain,
-                       GLogLevelFlags log_level,
-                       const gchar   *message,
-                       gpointer       user_data)
-{
-  gboolean *reconnect_failure = user_data;
-
-  if (g_str_has_prefix (message, "SDCP Reconnect failed:"))
-    *reconnect_failure = TRUE;
-
-  g_log_default_handler (log_domain, log_level, message, NULL);
-}
-
-static void
 test_sdcp_device_reconnect_wrong_label (void)
 {
-  g_autoptr(FptContext) tctx = sdcp_context_new ();
   g_autoptr(GError) error = NULL;
-  gboolean reconnect_failure = FALSE;
-  guint handler_id;
+  g_autofree char *tmpdir = g_dir_make_tmp ("sdcp-events-XXXXXX", &error);
+  g_autofree char *socket_path = NULL;
+  g_autoptr(GSocket) sock = NULL;
+  g_autofree char *events = NULL;
+  g_autoptr(FptContext) tctx = NULL;
+
+  g_assert_no_error (error);
+  socket_path = g_build_filename (tmpdir, "events.sock", NULL);
 
   g_setenv ("FP_VIRTUAL_SDCP_RECONNECT_LABEL", "other reconnect label", TRUE);
+  g_setenv ("FP_VIRTUAL_SDCP_EVENTS_SOCKET", socket_path, TRUE);
 
-  /* First open triggers a full connect, storing the wrong reconnect label
-   * in the session. */
+  /* Device is created after the env vars are set so the listener starts. */
+  tctx = sdcp_context_new ();
+  sock = connect_events_socket (socket_path);
+
+  /* First open triggers a full connect, storing the wrong reconnect label. */
   g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
   g_assert_no_error (error);
+
+  /* Drain the first-open event and verify it is a plain connect. */
+  g_clear_pointer (&events, g_free);
+  events = read_events (sock);
+  {
+    g_auto(GStrv) ev = g_strsplit (events, "\n", -1);
+    g_assert_cmpstr (ev[0], ==, "connect");
+  }
 
   fp_device_close_sync (tctx->device, NULL, &error);
   g_assert_no_error (error);
 
-  /* Second open: reconnect is attempted but its MAC doesn't match because
-   * the stored label diverges from the device's actual label.  The base
-   * class silently falls back to a fresh connect, so open still succeeds
-   * but "SDCP Reconnect failed; doing a full connect" is logged. */
-  handler_id = g_log_set_handler ("libfprint-sdcp_device",
-                                  G_LOG_LEVEL_DEBUG,
-                                  reconnect_log_handler,
-                                  &reconnect_failure);
+  /* Second open: reconnect is attempted but its MAC doesn't match because the
+   * stored label diverges from the device's actual label.  The base class
+   * falls back to a fresh connect silently, so open still succeeds. */
   g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
-  g_log_remove_handler ("libfprint-sdcp_device", handler_id);
-
   g_assert_no_error (error);
   g_assert_true (fp_device_is_open (tctx->device));
-  g_assert_true (reconnect_failure);
+
+  g_clear_pointer (&events, g_free);
+  events = read_events (sock);
+  {
+    g_auto(GStrv) ev = g_strsplit (events, "\n", -1);
+    /* Expect: reconnect attempted, MAC mismatch, fallback full connect. */
+    g_assert_cmpstr (ev[0], ==, "reconnect");
+    g_assert_cmpstr (ev[1], ==, "connect");
+  }
 
   g_unsetenv ("FP_VIRTUAL_SDCP_RECONNECT_LABEL");
+  g_unsetenv ("FP_VIRTUAL_SDCP_EVENTS_SOCKET");
+
+  g_unlink (socket_path);
+  g_rmdir (tmpdir);
 }
 
 static void

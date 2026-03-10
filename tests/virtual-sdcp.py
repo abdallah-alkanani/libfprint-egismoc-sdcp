@@ -3,7 +3,12 @@
 import sys
 try:
     import gi
+    import enum
     import os
+    import select
+    import socket
+    import tempfile
+    import time
 
     from gi.repository import GLib
 
@@ -24,10 +29,36 @@ else:
 
 ctx = GLib.main_context_default()
 
+
+class Connection:
+    """Context manager for a Unix-domain socket connection to the driver."""
+
+    def __init__(self, addr):
+        self.addr = addr
+
+    def __enter__(self):
+        self.con = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.con.connect(self.addr)
+        return self.con
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.con.close()
+        del self.con
+
+
+class SDCPEvent(enum.Enum):
+    """Events emitted by the virtual SDCP driver over the events socket."""
+    CONNECT = 'connect'
+    RECONNECT = 'reconnect'
+
+
 class VirtualSDCPBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._events_tmpdir = tempfile.TemporaryDirectory(prefix='sdcp-events-')
+        cls.events_socket_path = os.path.join(cls._events_tmpdir.name, 'events.sock')
+        os.environ['FP_VIRTUAL_SDCP_EVENTS_SOCKET'] = cls.events_socket_path
         os.environ['FP_VIRTUAL_SDCP'] = '1'
 
         cls.ctx = FPrint.Context()
@@ -49,6 +80,9 @@ class VirtualSDCPBase(unittest.TestCase):
 
         del cls.dev
         del cls.ctx
+
+        os.environ.pop('FP_VIRTUAL_SDCP_EVENTS_SOCKET', None)
+        cls._events_tmpdir.cleanup()
 
     def setUp(self):
         self.assertIsNotNone(self.dev)
@@ -122,6 +156,40 @@ class VirtualSDCPBase(unittest.TestCase):
 
     def set_reconnect_label(self, label):
         self.set_env('FP_VIRTUAL_SDCP_RECONNECT_LABEL', label)
+
+    @property
+    def sleep_multiplier(self):
+        return 5 if 'UNDER_VALGRIND' in os.environ else 1
+
+    def read_events(self, con, timeout=0.5):
+        """Pump the GLib main loop then read and parse all pending events.
+
+        Returns a list of SDCPEvent values in the order they were emitted.
+        """
+        # Let the driver flush its pending_events queue to the socket.
+        while ctx.iteration(False):
+            pass
+
+        raw = b''
+        con.setblocking(False)
+        deadline = time.time() + timeout * self.sleep_multiplier
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            r, _, _ = select.select([con], [], [], min(remaining, 0.1))
+            if r:
+                data = con.recv(256)
+                if not data:
+                    break
+                raw += data
+            else:
+                break
+        con.setblocking(True)
+
+        return [SDCPEvent(token)
+                for token in raw.decode().split('\n')
+                if token]
 
 
 class VirtualSDCPOpen(VirtualSDCPBase):
@@ -202,26 +270,23 @@ class VirtualSDCPOpen(VirtualSDCPBase):
         self.skipIfNotIndependentTest()
 
         self.set_reconnect_label('other-reconnect-label')
-        self.dev.open_sync()
-        self.dev.close_sync()
 
-        # On the second open, the reconnect MAC won't match because the stored
-        # label diverges from the device's actual label.  The base class falls
-        # back to a fresh connect silently, so open still succeeds.
-        reconnect_failed = False
+        with Connection(self.events_socket_path) as con:
+            self.dev.open_sync()
+            self.dev.close_sync()
 
-        def log_func(domain, level, msg):
-            nonlocal reconnect_failed
-            if msg.startswith('SDCP Reconnect failed:'):
-                reconnect_failed = True
-            GLib.log_default_handler(domain, level, msg)
+            # On the second open, the reconnect MAC won't match because the
+            # stored label diverges from the device's actual label.  The base
+            # class falls back to a fresh connect silently, so open still
+            # succeeds.  Drain the first-open events before continuing.
+            self.read_events(con)
 
-        handler_id = GLib.log_set_handler('libfprint-sdcp_device',
-                                          GLib.LogLevelFlags.LEVEL_DEBUG, log_func)
-        self.dev.open_sync()
-        GLib.log_remove_handler('libfprint-sdcp_device', handler_id)
+            self.dev.open_sync()
+            events = self.read_events(con)
 
-        self.assertTrue(reconnect_failed)
+        # Expect: reconnect attempted, MAC mismatch, fallback full connect.
+        self.assertIn(SDCPEvent.RECONNECT, events)
+        self.assertEqual(events[-2:], [SDCPEvent.RECONNECT, SDCPEvent.CONNECT])
 
 
 class VirtualSDCPOpenDeterministic(VirtualSDCPOpen):
@@ -337,31 +402,17 @@ class VirtualSDCP(VirtualSDCPOpenedBase):
         pass
 
     def test_reconnect(self):
-        # FIXME:
-        # Ensure device was opened once before, this may be a reconnect if
-        # it is the same process as another test.
+        # Ensure device was opened once before; setUp already did that, so
+        # close it now to trigger a reconnect on the next open.
         self.dev.close_sync()
 
-        # Check that a reconnect happens on next open. To know about this, we
-        # need to parse check log messages for that.
-        reconnected = False
+        with Connection(self.events_socket_path) as con:
+            self.dev.open_sync()
+            events = self.read_events(con)
 
-        def log_func(domain, level, msg):
-            nonlocal reconnected
-
-            print(f"log: '{domain}', '{level}', '{msg}'")
-            # FIXME: We should not rely on log messages, but rather setup a socket
-            # for communication between the test and the driver.
-            if msg == 'SDCP Reconnect succeeded':
-                reconnected = True
-
-            # Call default handler
-            GLib.log_default_handler(domain, level, msg)
-
-        handler_id = GLib.log_set_handler('libfprint-sdcp_device', GLib.LogLevelFlags.LEVEL_DEBUG, log_func)
-        self.dev.open_sync()
-        GLib.log_remove_handler('libfprint-sdcp_device', handler_id)
-        self.assertTrue(reconnected)
+        # The reconnect path: last event is RECONNECT (no fallback connect).
+        self.assertIn(SDCPEvent.RECONNECT, events)
+        self.assertEqual(events[-1], SDCPEvent.RECONNECT)
 
     def test_list(self):
         prints = self.dev.list_prints_sync()
@@ -423,37 +474,17 @@ class VirtualSDCPNoReconnect(VirtualSDCPOpenedBase):
         pass
 
     def test_reconnect(self):
-        # Ensure device was opened once before, this may be a reconnect if
-        # it is the same process as another test.
+        # Ensure device was opened once before; setUp already did that, so
+        # close it now and verify no reconnect is attempted on next open.
         self.dev.close_sync()
 
-        # Check that a reconnect happens on next open. To know about this, we
-        # need to parse check log messages for that.
-        reconnected = False
-        reconnect_failed = False
+        with Connection(self.events_socket_path) as con:
+            self.dev.open_sync()
+            events = self.read_events(con)
 
-        def log_func(domain, level, msg):
-            nonlocal reconnected, reconnect_failed
-
-            print(f"log: '{domain}', '{level}', '{msg}'")
-            # FIXME: We should not rely on log messages, but rather setup a socket
-            # for communication between the test and the driver.
-            if msg == 'SDCP Reconnect succeeded':
-                reconnected = True
-            if msg.startswith('SDCP Reconnect failed:'):
-                reconnect_failed = True
-
-            # Call default handler
-            GLib.log_default_handler(domain, level, msg)
-
-        handler_id = GLib.log_set_handler('libfprint-sdcp_device',
-                                          GLib.LogLevelFlags.LEVEL_DEBUG, log_func)
-        self.dev.open_sync()
-        GLib.log_remove_handler('libfprint-sdcp_device', handler_id)
-
-        # Ensure that we did NOT see Reconnect messages.
-        self.assertFalse(reconnected)
-        self.assertFalse(reconnect_failed)
+        # No reconnect vfunc: last event must be CONNECT, no RECONNECT seen.
+        self.assertEqual(events[-1], SDCPEvent.CONNECT)
+        self.assertNotIn(SDCPEvent.RECONNECT, events)
 
 
 if __name__ == '__main__':

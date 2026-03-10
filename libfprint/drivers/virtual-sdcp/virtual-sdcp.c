@@ -52,6 +52,7 @@
 #include "fpi-sdcp-claim.h"
 
 #include "virtual-sdcp.h"
+#include "../virtual-device-private.h"
 #include "virtual-sdcp-ca-store-resource.h"
 #include "virtual-sdcp-partial-chain-ca-store-resource.h"
 #include "virtual-sdcp-full-chain-ca-store-resource.h"
@@ -61,6 +62,14 @@ struct _FpDeviceVirtualSdcp
   FpSdcpDevice parent;
 
   GPtrArray   *print_ids;
+
+  /* Optional Unix-socket listener to handle events.
+   * Set FP_VIRTUAL_SDCP_EVENTS_SOCKET to a path before creating the
+   * device to enable this.
+   */
+  FpiDeviceVirtualListener *events_listener;
+  GCancellable             *events_cancellable;
+  GQueue                   *pending_events;
 };
 
 #ifdef TEST_TOD_DRIVER
@@ -310,13 +319,53 @@ dev_clear_storage (FpDevice *device)
 }
 
 static void
+on_events_connected (FpiDeviceVirtualListener *listener G_GNUC_UNUSED,
+                     gpointer                           user_data)
+{
+  FpDeviceVirtualSdcp *self = user_data;
+  gchar *event;
+
+  /* Flush any events that were emitted before the client connected. */
+  while ((event = g_queue_pop_head (self->pending_events)) != NULL)
+    {
+      g_autoptr(GError) error = NULL;
+      fpi_device_virtual_listener_write_sync (self->events_listener,
+                                              event, strlen (event), &error);
+      g_free (event);
+    }
+}
+
+/* Write an event string to the connected test client.  If no client is
+ * connected yet the event is buffered and flushed in on_events_connected. */
+static void
+write_event (FpDeviceVirtualSdcp *self, const gchar *event)
+{
+  g_autoptr(GError) error = NULL;
+
+  if (!self->events_listener)
+    return;
+
+  if (fpi_device_virtual_listener_write_sync (self->events_listener,
+                                              event, strlen (event), &error))
+    return;
+
+  /* Write failed — no client connected yet (or it disconnected). Queue. */
+  g_clear_error (&error);
+  g_queue_push_tail (self->pending_events, g_strdup (event));
+}
+
+static void
 dev_reconnect (FpSdcpDevice *sdcp_device)
 {
+  FpDeviceVirtualSdcp *self = FPI_DEVICE_VIRTUAL_SDCP (sdcp_device);
+
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) random = NULL;
   g_autoptr(GBytes) app_secret = NULL;
   g_autoptr(GBytes) reconnect_mac = NULL;
+
+  write_event (self, "reconnect\n");
 
   /*
    * Normally, a driver would fetch the reconnect data and then send it to the
@@ -438,6 +487,7 @@ derive_application_secret (GBytes  *host_public_key,
 static void
 dev_connect (FpSdcpDevice *sdcp_device)
 {
+  FpDeviceVirtualSdcp *self = FPI_DEVICE_VIRTUAL_SDCP (sdcp_device);
   FpSdcpDeviceClass *sdcp_cls = FP_SDCP_DEVICE_GET_CLASS (sdcp_device);
   FpiDeviceSdcpVerificationFlags old_flags;
 
@@ -451,6 +501,8 @@ dev_connect (FpSdcpDevice *sdcp_device)
   const gchar *model_certificate;
 
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
+
+  write_event (self, "connect\n");
 
   fpi_sdcp_device_get_connect_data (sdcp_device, &host_random, &host_public_key);
 
@@ -569,6 +621,13 @@ fpi_device_virtual_sdcp_finalize (GObject *object)
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
   FpDeviceVirtualSdcp *self = FPI_DEVICE_VIRTUAL_SDCP (object);
 
+  if (self->events_cancellable)
+    g_cancellable_cancel (self->events_cancellable);
+  g_clear_object (&self->events_listener);
+  g_clear_object (&self->events_cancellable);
+  if (self->pending_events)
+    g_queue_free_full (g_steal_pointer (&self->pending_events), g_free);
+
   g_clear_pointer (&self->print_ids, g_ptr_array_unref);
 
   G_OBJECT_CLASS (fpi_device_virtual_sdcp_parent_class)->finalize (object);
@@ -578,6 +637,7 @@ static void
 fpi_device_virtual_sdcp_init (FpDeviceVirtualSdcp *self)
 {
   static gsize initialized = FALSE;
+  const gchar *events_socket;
 
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 
@@ -591,6 +651,24 @@ fpi_device_virtual_sdcp_init (FpDeviceVirtualSdcp *self)
     }
 
   self->print_ids = g_ptr_array_new_with_free_func ((GDestroyNotify) g_bytes_unref);
+
+  events_socket = g_getenv ("FP_VIRTUAL_SDCP_EVENTS_SOCKET");
+  if (events_socket)
+    {
+      g_autoptr(GError) error = NULL;
+
+      self->events_cancellable = g_cancellable_new ();
+      self->events_listener = fpi_device_virtual_listener_new ();
+      self->pending_events = g_queue_new ();
+
+      if (!fpi_device_virtual_listener_start (self->events_listener,
+                                              events_socket,
+                                              self->events_cancellable,
+                                              on_events_connected,
+                                              self,
+                                              &error))
+        g_warning ("Failed to start SDCP events listener: %s", error->message);
+    }
 }
 
 static const FpIdEntry driver_ids[] = {

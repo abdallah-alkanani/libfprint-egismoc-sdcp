@@ -562,6 +562,8 @@ if get_option('tod')
             sources: [
                 driver_sources['virtual_sdcp'],
                 driver_generated_sources['virtual_sdcp'],
+                helper_sources['sdcp'],
+                helper_sources['virtual'],
                 'test-virtual-sdcp-tod.c',
             ],
             c_args: tod_c_args,
