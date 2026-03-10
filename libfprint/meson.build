@@ -88,76 +88,56 @@ nbis_sources = [
 ]
 
 driver_sources = {
-    'upekts' :
-        [ 'drivers/upekts.c', 'drivers/upek_proto.c' ],
-    'upektc' :
-        [ 'drivers/upektc.c' ],
-    'upeksonly' :
-        [ 'drivers/upeksonly.c' ],
-    'uru4000' :
-        [ 'drivers/uru4000.c' ],
-    'aes1610' :
-        [ 'drivers/aes1610.c' ],
-    'aes1660' :
-        [ 'drivers/aes1660.c' ],
-    'aes2501' :
-        [ 'drivers/aes2501.c' ],
-    'aes2550' :
-        [ 'drivers/aes2550.c' ],
-    'aes2660' :
-        [ 'drivers/aes2660.c' ],
-    'aes3500' :
-        [ 'drivers/aes3500.c' ],
-    'aes4000' :
-        [ 'drivers/aes4000.c' ],
-    'vcom5s' :
-        [ 'drivers/vcom5s.c' ],
-    'vfs101' :
-        [ 'drivers/vfs101.c' ],
-    'vfs301' :
-        [ 'drivers/vfs301.c', 'drivers/vfs301_proto.c' ],
-    'vfs5011' :
-        [ 'drivers/vfs5011.c' ],
-    'vfs7552' :
-        [ 'drivers/vfs7552.c' ],
-    'upektc_img' :
-        [ 'drivers/upektc_img.c',  'drivers/upek_proto.c' ],
-    'etes603' :
-        [ 'drivers/etes603.c' ],
-    'egis0570' :
-        [ 'drivers/egis0570.c' ],
-    'egismoc' :
-        [ 'drivers/egismoc/egismoc.c' ],
-    'egis_etu905' :
-        [ 'drivers/egismoc/egis_etu905.c' ],
-    'vfs0050' :
-        [ 'drivers/vfs0050.c' ],
-    'elan' :
-        [ 'drivers/elan.c' ],
-    'elanmoc' :
-        [ 'drivers/elanmoc/elanmoc.c' ],
-    'elanspi' :
-        [ 'drivers/elanspi.c' ],
-    'nb1010' :
-        [ 'drivers/nb1010.c' ],
-    'virtual_image' :
-        [ 'drivers/virtual-image.c' ],
-    'virtual_device' :
-        [ 'drivers/virtual-device.c' ],
-    'virtual_device_storage' :
-        [ 'drivers/virtual-device-storage.c' ],
-    'virtual_sdcp' :
-        [ 'drivers/virtual-sdcp/virtual-sdcp.c' ],
-    'synaptics' :
-        [ 'drivers/synaptics/synaptics.c', 'drivers/synaptics/bmkt_message.c' ],
-    'goodixmoc' :
-        [ 'drivers/goodixmoc/goodix.c', 'drivers/goodixmoc/goodix_proto.c' ],
-    'fpcmoc' :
-        [ 'drivers/fpcmoc/fpc.c' ],
-    'realtek' :
-        [ 'drivers/realtek/realtek.c' ],
-    'focaltech_moc' :
-        [ 'drivers/focaltech_moc/focaltech_moc.c' ],
+    'upekts': files(
+        'drivers/upekts.c',
+        'drivers/upek_proto.c',
+    ),
+    'upektc': files('drivers/upektc.c'),
+    'upeksonly': files('drivers/upeksonly.c'),
+    'uru4000': files('drivers/uru4000.c'),
+    'aes1610': files('drivers/aes1610.c'),
+    'aes1660': files('drivers/aes1660.c'),
+    'aes2501': files('drivers/aes2501.c'),
+    'aes2550': files('drivers/aes2550.c'),
+    'aes2660': files('drivers/aes2660.c'),
+    'aes3500': files('drivers/aes3500.c'),
+    'aes4000': files('drivers/aes4000.c'),
+    'vcom5s': files('drivers/vcom5s.c'),
+    'vfs101': files('drivers/vfs101.c'),
+    'vfs301': files(
+        'drivers/vfs301.c',
+        'drivers/vfs301_proto.c',
+    ),
+    'vfs5011': files('drivers/vfs5011.c'),
+    'vfs7552': files('drivers/vfs7552.c'),
+    'upektc_img': files(
+        'drivers/upektc_img.c',
+        'drivers/upek_proto.c',
+    ),
+    'etes603': files('drivers/etes603.c'),
+    'egis0570': files('drivers/egis0570.c'),
+    'egismoc': files('drivers/egismoc/egismoc.c'),
+    'egis_etu905': files('drivers/egismoc/egis_etu905.c'),
+    'vfs0050': files('drivers/vfs0050.c'),
+    'elan': files('drivers/elan.c'),
+    'elanmoc': files('drivers/elanmoc/elanmoc.c'),
+    'elanspi': files('drivers/elanspi.c'),
+    'nb1010': files('drivers/nb1010.c'),
+    'virtual_image': files('drivers/virtual-image.c'),
+    'virtual_device': files('drivers/virtual-device.c'),
+    'virtual_device_storage': files('drivers/virtual-device-storage.c'),
+    'virtual_sdcp': files('drivers/virtual-sdcp/virtual-sdcp.c'),
+    'synaptics': files(
+        'drivers/synaptics/synaptics.c',
+        'drivers/synaptics/bmkt_message.c',
+    ),
+    'goodixmoc': files(
+        'drivers/goodixmoc/goodix.c',
+        'drivers/goodixmoc/goodix_proto.c',
+    ),
+    'fpcmoc': files('drivers/fpcmoc/fpc.c'),
+    'realtek': files('drivers/realtek/realtek.c'),
+    'focaltech_moc': files('drivers/focaltech_moc/focaltech_moc.c'),
 }
 
 virtual_sdcp_ca_store_resource = gnome.compile_resources(
@@ -193,20 +173,13 @@ driver_generated_sources = {
 }
 
 helper_sources = {
-    'aeslib' :
-        [ 'drivers/aeslib.c' ],
-    'aesx660' :
-        [ 'drivers/aesx660.c' ],
-    'aes3k' :
-        [ 'drivers/aes3k.c' ],
-    'openssl' :
-        [ ],
-    'sdcp' :
-        [ ],
-    'udev' :
-        [ ],
-    'virtual' :
-        [ 'drivers/virtual-device-listener.c' ],
+    'aeslib': files('drivers/aeslib.c'),
+    'aesx660': files('drivers/aesx660.c'),
+    'aes3k': files('drivers/aes3k.c'),
+    'openssl': files(),
+    'sdcp': files(),
+    'udev': files(),
+    'virtual': files('drivers/virtual-device-listener.c'),
 }
 
 drivers_sources = []
