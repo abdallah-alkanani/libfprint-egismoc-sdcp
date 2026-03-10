@@ -631,22 +631,19 @@ fp_print_equal (FpPrint *self, FpPrint *other)
   if (g_strcmp0 (self->device_id, other->device_id))
     return FALSE;
 
-  if (self->type == FPI_PRINT_RAW)
+  switch (self->type)
     {
+    case FPI_PRINT_RAW:
       return g_variant_equal (self->data, other->data);
-    }
-  else if (self->type == FPI_PRINT_SDCP)
-    {
-      return g_bytes_equal (self->sdcp_id, other->sdcp_id);
-    }
-  else if (self->type == FPI_PRINT_NBIS)
-    {
-      guint i;
 
+    case FPI_PRINT_SDCP:
+      return g_bytes_equal (self->sdcp_id, other->sdcp_id);
+
+    case FPI_PRINT_NBIS:
       if (self->prints->len != other->prints->len)
         return FALSE;
 
-      for (i = 0; i < self->prints->len; i++)
+      for (guint i = 0; i < self->prints->len; i++)
         {
           struct xyt_struct *a = g_ptr_array_index (self->prints, i);
           struct xyt_struct *b = g_ptr_array_index (other->prints, i);
@@ -656,11 +653,12 @@ fp_print_equal (FpPrint *self, FpPrint *other)
         }
 
       return TRUE;
-    }
-  else
-    {
+
+    case FPI_PRINT_UNDEFINED:
       g_assert_not_reached ();
     }
+
+  g_return_val_if_reached (FALSE);
 }
 
 #define FPI_PRINT_VARIANT_TYPE G_VARIANT_TYPE ("(issbymsmsia{sv}v)")
