@@ -544,7 +544,9 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
       else
         {
           /* NOTE: This string matters in tests! */
-          fp_dbg ("SDCP Reconnect failed; doing a full connect.");
+          fp_dbg ("SDCP Reconnect failed: %s; doing a full connect",
+                  error->message);
+          g_clear_error (&error);
           fpi_sdcp_device_connect (self);
         }
     }

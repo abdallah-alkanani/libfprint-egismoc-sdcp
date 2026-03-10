@@ -114,6 +114,26 @@ get_fake_sdcp_claim (const gchar *certificate_hex)
   claim->firmware_hash = bytes_from_hex (firmware_hash_hex);
   claim->model_signature = bytes_from_hex (model_signature_hex);
   claim->device_signature = bytes_from_hex (device_signature_hex);
+
+  /* Allow tests to override any HMAC label in the claim.
+   *
+   * Open-phase labels (master_secret, application_keys, connect): the device
+   * always computes using the default labels, so putting a different label in
+   * the claim causes fpi_sdcp_verify_connect() to derive different keys /
+   * verify the wrong MAC, leading to FP_DEVICE_ERROR_UNTRUSTED during open.
+   *
+   * Per-session labels (reconnect, enroll, identify): these are stored from
+   * the claim during connect and used for subsequent operations.  A wrong
+   * label causes the host-side recomputation to diverge from the device's
+   * value, leading to FP_DEVICE_ERROR_UNTRUSTED in the affected operation.
+   */
+  claim->master_secret_label    = g_getenv ("FP_VIRTUAL_SDCP_MASTER_SECRET_LABEL");
+  claim->application_keys_label = g_getenv ("FP_VIRTUAL_SDCP_APPLICATION_KEYS_LABEL");
+  claim->connect_label          = g_getenv ("FP_VIRTUAL_SDCP_CONNECT_LABEL");
+  claim->reconnect_label        = g_getenv ("FP_VIRTUAL_SDCP_RECONNECT_LABEL");
+  claim->enroll_label           = g_getenv ("FP_VIRTUAL_SDCP_ENROLL_LABEL");
+  claim->identify_label         = g_getenv ("FP_VIRTUAL_SDCP_IDENTIFY_LABEL");
+
   return g_steal_pointer (&claim);
 }
 

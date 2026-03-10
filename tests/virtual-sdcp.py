@@ -57,6 +57,14 @@ class VirtualSDCPBase(unittest.TestCase):
     def tearDown(self):
         self.assertFalse(self.dev.is_open())
 
+    def skipIfNotIndependentTest(self):
+        # Some tests rely on environment variables to configure the virtual SDCP
+        # device behavior.
+        # If tests are not run independently, then the environment variables may
+        # leak between tests and cause unexpected interactions.
+        if os.environ.get('FP_TESTS_INDEPENDENT') != '1':
+            self.skipTest("This test must be run in independent mode")
+
     def set_env(self, key, value='1'):
         os.environ[key] = value
         self.addCleanup(os.environ.pop, key, None)
@@ -96,6 +104,24 @@ class VirtualSDCPBase(unittest.TestCase):
     def use_deterministic_random(self):
         self.set_env('FP_VIRTUAL_SDCP_DETERMINISTIC')
         self.set_env('FP_SDCP_FIXED_RANDOM')
+
+    def set_enroll_label(self, label):
+        self.set_env('FP_VIRTUAL_SDCP_ENROLL_LABEL', label)
+
+    def set_identify_label(self, label):
+        self.set_env('FP_VIRTUAL_SDCP_IDENTIFY_LABEL', label)
+
+    def set_connect_label(self, label):
+        self.set_env('FP_VIRTUAL_SDCP_CONNECT_LABEL', label)
+
+    def set_master_secret_label(self, label):
+        self.set_env('FP_VIRTUAL_SDCP_MASTER_SECRET_LABEL', label)
+
+    def set_application_keys_label(self, label):
+        self.set_env('FP_VIRTUAL_SDCP_APPLICATION_KEYS_LABEL', label)
+
+    def set_reconnect_label(self, label):
+        self.set_env('FP_VIRTUAL_SDCP_RECONNECT_LABEL', label)
 
 
 class VirtualSDCPOpen(VirtualSDCPBase):
@@ -138,6 +164,64 @@ class VirtualSDCPOpen(VirtualSDCPBase):
         self.allow_partial_chain()
 
         self.dev.open_sync()
+
+    def test_enroll_fails_with_other_label(self):
+        self.skipIfNotIndependentTest()
+
+        self.set_enroll_label('other-enroll-label')
+        self.dev.open_sync()
+
+        template = FPrint.Print.new(self.dev)
+        template.set_finger(FPrint.Finger.LEFT_THUMB)
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.enroll_sync(template, None, None, None)
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_identify_fails_with_other_label(self):
+        self.skipIfNotIndependentTest()
+
+        self.set_identify_label('other-identify-label')
+        self.dev.open_sync()
+
+        template = FPrint.Print.new(self.dev)
+        template.set_finger(FPrint.Finger.LEFT_THUMB)
+
+        enrolled = self.dev.enroll_sync(template, None, None, None)
+        self.assertIsInstance(enrolled, FPrint.Print)
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.identify_sync([enrolled], None, None, None)
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+        self.dev.clear_storage_sync()
+
+    def test_reconnect_fails_with_other_label(self):
+        self.skipIfNotIndependentTest()
+
+        self.set_reconnect_label('other-reconnect-label')
+        self.dev.open_sync()
+        self.dev.close_sync()
+
+        # On the second open, the reconnect MAC won't match because the stored
+        # label diverges from the device's actual label.  The base class falls
+        # back to a fresh connect silently, so open still succeeds.
+        reconnect_failed = False
+
+        def log_func(domain, level, msg):
+            nonlocal reconnect_failed
+            if msg.startswith('SDCP Reconnect failed:'):
+                reconnect_failed = True
+            GLib.log_default_handler(domain, level, msg)
+
+        handler_id = GLib.log_set_handler('libfprint-sdcp_device',
+                                          GLib.LogLevelFlags.LEVEL_DEBUG, log_func)
+        self.dev.open_sync()
+        GLib.log_remove_handler('libfprint-sdcp_device', handler_id)
+
+        self.assertTrue(reconnect_failed)
 
 
 class VirtualSDCPOpenDeterministic(VirtualSDCPOpen):
@@ -200,6 +284,30 @@ class VirtualSDCPOpenFailures(VirtualSDCPBase):
         self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
                                                 FPrint.DeviceError.UNTRUSTED))
 
+    def test_fails_to_open_with_other_connect_label(self):
+        self.set_connect_label('other-connect-label')
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_fails_to_open_with_other_master_secret_label(self):
+        self.set_master_secret_label('other-master-secret-label')
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
+    def test_fails_to_open_with_other_application_keys_label(self):
+        self.set_application_keys_label('other-application-keys-label')
+
+        with self.assertRaises(GLib.Error) as error:
+            self.dev.open_sync()
+        self.assertTrue(error.exception.matches(FPrint.DeviceError.quark(),
+                                                FPrint.DeviceError.UNTRUSTED))
+
 
 class VirtualSDCPOpenFailuresDeterministic(VirtualSDCPOpenFailures):
     """Run the same VirtualSDCPOpenFailures tests with FP_VIRTUAL_SDCP_DETERMINISTIC=1."""
@@ -207,6 +315,7 @@ class VirtualSDCPOpenFailuresDeterministic(VirtualSDCPOpenFailures):
     def setUp(self):
         self.use_deterministic_random()
         super().setUp()
+
 
 class VirtualSDCPOpenedBase(VirtualSDCPBase):
 
@@ -321,14 +430,18 @@ class VirtualSDCPNoReconnect(VirtualSDCPOpenedBase):
         # Check that a reconnect happens on next open. To know about this, we
         # need to parse check log messages for that.
         reconnected = False
+        reconnect_failed = False
+
         def log_func(domain, level, msg):
-            nonlocal reconnected
+            nonlocal reconnected, reconnect_failed
 
             print(f"log: '{domain}', '{level}', '{msg}'")
             # FIXME: We should not rely on log messages, but rather setup a socket
             # for communication between the test and the driver.
             if msg == 'SDCP Reconnect succeeded':
                 reconnected = True
+            if msg.startswith('SDCP Reconnect failed:'):
+                reconnect_failed = True
 
             # Call default handler
             GLib.log_default_handler(domain, level, msg)
@@ -338,8 +451,9 @@ class VirtualSDCPNoReconnect(VirtualSDCPOpenedBase):
         self.dev.open_sync()
         GLib.log_remove_handler('libfprint-sdcp_device', handler_id)
 
-        # Ensure that we did NOT see "SDCP Reconnect succeeded" in the log
+        # Ensure that we did NOT see Reconnect messages.
         self.assertFalse(reconnected)
+        self.assertFalse(reconnect_failed)
 
 
 if __name__ == '__main__':

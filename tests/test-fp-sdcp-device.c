@@ -265,6 +265,56 @@ test_sdcp_device_reconnect_not_supported (void)
 }
 
 static void
+reconnect_log_handler (const gchar   *log_domain,
+                       GLogLevelFlags log_level,
+                       const gchar   *message,
+                       gpointer       user_data)
+{
+  gboolean *reconnect_failure = user_data;
+
+  if (g_str_has_prefix (message, "SDCP Reconnect failed:"))
+    *reconnect_failure = TRUE;
+
+  g_log_default_handler (log_domain, log_level, message, NULL);
+}
+
+static void
+test_sdcp_device_reconnect_wrong_label (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+  gboolean reconnect_failure = FALSE;
+  guint handler_id;
+
+  g_setenv ("FP_VIRTUAL_SDCP_RECONNECT_LABEL", "other reconnect label", TRUE);
+
+  /* First open triggers a full connect, storing the wrong reconnect label
+   * in the session. */
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+
+  fp_device_close_sync (tctx->device, NULL, &error);
+  g_assert_no_error (error);
+
+  /* Second open: reconnect is attempted but its MAC doesn't match because
+   * the stored label diverges from the device's actual label.  The base
+   * class silently falls back to a fresh connect, so open still succeeds
+   * but "SDCP Reconnect failed; doing a full connect" is logged. */
+  handler_id = g_log_set_handler ("libfprint-sdcp_device",
+                                  G_LOG_LEVEL_DEBUG,
+                                  reconnect_log_handler,
+                                  &reconnect_failure);
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_log_remove_handler ("libfprint-sdcp_device", handler_id);
+
+  g_assert_no_error (error);
+  g_assert_true (fp_device_is_open (tctx->device));
+  g_assert_true (reconnect_failure);
+
+  g_unsetenv ("FP_VIRTUAL_SDCP_RECONNECT_LABEL");
+}
+
+static void
 test_sdcp_device_list_empty (void)
 {
   g_autoptr(FptContext) tctx = sdcp_context_new ();
@@ -369,6 +419,105 @@ test_sdcp_device_identify_no_prints (void)
 }
 
 static void
+test_sdcp_device_open_fails_wrong_connect_label (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+
+  g_setenv ("FP_VIRTUAL_SDCP_CONNECT_LABEL", "other connect label", TRUE);
+
+  g_assert_false (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
+
+  g_unsetenv ("FP_VIRTUAL_SDCP_CONNECT_LABEL");
+}
+
+static void
+test_sdcp_device_open_fails_wrong_master_secret_label (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+
+  g_setenv ("FP_VIRTUAL_SDCP_MASTER_SECRET_LABEL", "other master secret label", TRUE);
+
+  g_assert_false (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
+
+  g_unsetenv ("FP_VIRTUAL_SDCP_MASTER_SECRET_LABEL");
+}
+
+static void
+test_sdcp_device_open_fails_wrong_application_keys_label (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+
+  g_setenv ("FP_VIRTUAL_SDCP_APPLICATION_KEYS_LABEL", "other application keys label", TRUE);
+
+  g_assert_false (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
+
+  g_unsetenv ("FP_VIRTUAL_SDCP_APPLICATION_KEYS_LABEL");
+}
+
+static void
+test_sdcp_device_enroll_fails_wrong_label (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+  g_autoptr(FpPrint) enrolled = NULL;
+
+  g_setenv ("FP_VIRTUAL_SDCP_ENROLL_LABEL", "other enroll label", TRUE);
+
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+
+  g_unsetenv ("FP_VIRTUAL_SDCP_ENROLL_LABEL");
+
+  /* Enroll fails because the host uses the wrong claim label to generate
+   * the enrollment ID, which the device rejects as not matching. */
+  enrolled = fp_device_enroll_sync (tctx->device,
+                                    make_enroll_template (tctx->device),
+                                    NULL, NULL, NULL, &error);
+  g_assert_null (enrolled);
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
+}
+
+static void
+test_sdcp_device_identify_fails_wrong_label (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+  g_autoptr(FpPrint) enrolled = NULL;
+  g_autoptr(GPtrArray) gallery = NULL;
+  FpPrint *match = NULL;
+
+  g_setenv ("FP_VIRTUAL_SDCP_IDENTIFY_LABEL", "other identify label", TRUE);
+
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+
+  g_unsetenv ("FP_VIRTUAL_SDCP_IDENTIFY_LABEL");
+
+  /* Enroll succeeds: the enroll label is still the default. */
+  enrolled = fp_device_enroll_sync (tctx->device,
+                                    make_enroll_template (tctx->device),
+                                    NULL, NULL, NULL, &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (enrolled);
+
+  gallery = g_ptr_array_new_with_free_func (g_object_unref);
+  g_ptr_array_add (gallery, g_object_ref (enrolled));
+
+  /* Identify fails because the host uses the wrong claim label to verify
+   * the identify MAC, which doesn't match the MAC computed by the device. */
+  g_assert_false (fp_device_identify_sync (tctx->device, gallery, NULL,
+                                           NULL, NULL, &match, NULL, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
+  g_assert_null (match);
+}
+
+static void
 test_sdcp_device_clear_storage (void)
 {
   g_autoptr(FptContext) tctx = sdcp_context_new ();
@@ -423,6 +572,12 @@ main (int argc, char *argv[])
                    test_sdcp_device_open_succeeds_partial_chain_certificate_with_allow);
   g_test_add_func ("/sdcp-device/open/succeeds/partial_chain_certificate_with_full_chain_ca",
                    test_sdcp_device_open_succeeds_partial_chain_certificate_with_full_chain_ca);
+  g_test_add_func ("/sdcp-device/open/fails/wrong_connect_label",
+                   test_sdcp_device_open_fails_wrong_connect_label);
+  g_test_add_func ("/sdcp-device/open/fails/wrong_master_secret_label",
+                   test_sdcp_device_open_fails_wrong_master_secret_label);
+  g_test_add_func ("/sdcp-device/open/fails/wrong_application_keys_label",
+                   test_sdcp_device_open_fails_wrong_application_keys_label);
 
   g_test_add_func ("/sdcp-device/reconnect",
                    test_sdcp_device_reconnect);
@@ -430,6 +585,8 @@ main (int argc, char *argv[])
                    test_sdcp_device_reconnect_deterministic);
   g_test_add_func ("/sdcp-device/reconnect/not_supported",
                    test_sdcp_device_reconnect_not_supported);
+  g_test_add_func ("/sdcp-device/reconnect/wrong_label",
+                   test_sdcp_device_reconnect_wrong_label);
 
   g_test_add_func ("/sdcp-device/list/empty",
                    test_sdcp_device_list_empty);
@@ -437,10 +594,14 @@ main (int argc, char *argv[])
                    test_sdcp_device_enroll);
   g_test_add_func ("/sdcp-device/enroll/list",
                    test_sdcp_device_enroll_list);
+  g_test_add_func ("/sdcp-device/enroll/fails/wrong_label",
+                   test_sdcp_device_enroll_fails_wrong_label);
   g_test_add_func ("/sdcp-device/identify",
                    test_sdcp_device_identify);
   g_test_add_func ("/sdcp-device/identify/no_prints",
                    test_sdcp_device_identify_no_prints);
+  g_test_add_func ("/sdcp-device/identify/fails/wrong_label",
+                   test_sdcp_device_identify_fails_wrong_label);
   g_test_add_func ("/sdcp-device/clear_storage",
                    test_sdcp_device_clear_storage);
 
