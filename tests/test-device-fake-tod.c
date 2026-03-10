@@ -21,7 +21,7 @@
 #include "test-device-fake-tod.h"
 #include "test-device-fake.h"
 
-GType
+G_MODULE_EXPORT GType
 fpi_tod_shared_driver_get_type (void)
 {
   return fpi_device_fake_get_type ();
