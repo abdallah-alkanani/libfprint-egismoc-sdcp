@@ -265,7 +265,7 @@ global:
     fpi_sdcp_device_connect_complete;
     fpi_sdcp_device_enroll_commit;
     fpi_sdcp_device_enroll_commit_complete;
-    fpi_sdcp_device_get_application_secret;
+    fpi_sdcp_device_get_application_secret_1_95;
     fpi_sdcp_device_get_connect_data;
     fpi_sdcp_device_get_identify_data;
     fpi_sdcp_device_get_print_id;
@@ -293,7 +293,6 @@ global:
     fpi_print_sdcp_set_id;
     fpi_sdcp_claim_hash;
     fpi_sdcp_device_get_application_secret;
-    fpi_sdcp_device_get_application_secret_1_95;
     fpi_sdcp_device_get_print_id_1_95;
     fpi_sdcp_device_set_print_id_1_95;
     fpi_sdcp_error_new_msg;
