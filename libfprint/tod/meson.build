@@ -35,14 +35,11 @@ libfprint_tod_private = static_library('fprint-tod-private',
 tod_sources = [
     'tod-wrappers.c',
     'tod-symbols.h',
+    sdcp_ca_store_resource,
 ]
 foreach source: libfprint_private_sources
     tod_sources += '..' / source
 endforeach
-
-if 'sdcp' in driver_helpers
-    tod_sources += sdcp_ca_store_resource
-endif
 
 tod_symbols = files('tod-symbols.h')[0]
 if meson.version().version_compare('>=1.4')

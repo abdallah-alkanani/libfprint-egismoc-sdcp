@@ -231,8 +231,14 @@ foreach driver : drivers
     endif
 endforeach
 
+if get_option('tod')
+    driver_helpers += [
+        'sdcp',
+        'udev',
+    ]
+endif
 
-if drivers.length() == 0 or drivers[0] == ''
+if drivers.length() == 0 or drivers[0] == '' and not get_option('tod')
     error('Cannot build libfprint without drivers, please specify a valid value for the drivers option')
 endif
 

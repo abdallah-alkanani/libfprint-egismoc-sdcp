@@ -194,7 +194,7 @@ foreach helper : driver_helpers
 endforeach
 
 subdir('sdcp')
-if 'sdcp' in driver_helpers
+if 'sdcp' in driver_helpers or get_option('tod')
     libfprint_sources += [
         'fp-sdcp-device.c',
     ]
