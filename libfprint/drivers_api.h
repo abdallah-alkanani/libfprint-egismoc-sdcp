@@ -22,6 +22,7 @@
 #pragma once
 
 #include "fpi-compat.h"
+#include "fpi-enums.h"
 #include "fpi-assembling.h"
 #include "fpi-device.h"
 #include "fpi-image-device.h"
