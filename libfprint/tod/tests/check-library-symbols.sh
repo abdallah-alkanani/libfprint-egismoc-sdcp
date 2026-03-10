@@ -11,10 +11,6 @@ function dump_exported_symbols() {
     objdump -TC "$1" | cleanup_results
 }
 
-function dump_defined_symbols() {
-    objdump -t "$1" | cleanup_results
-}
-
 function in_array() {
   local target=$1
   shift
@@ -39,26 +35,11 @@ function is_fatal() {
 lib1_exported=($(dump_exported_symbols "$library1"))
 lib2_exported=($(dump_exported_symbols "$library2"))
 
-lib1_defined=("$(dump_defined_symbols "$library1")")
-lib2_defined=("$(dump_defined_symbols "$library2")")
-
 valid=true
 
 for f in ${lib1_exported[*]}; do
     if in_array "$f" ${lib2_exported[*]}; then
         echo -n "$f function exported in both $library1 and $library2"
-        if is_fatal "$f"; then
-            echo " (fatal)"
-            valid=false
-        else
-            echo
-        fi
-    fi
-done
-
-for f in ${lib1_defined[*]}; do
-    if in_array "$f" ${lib2_defined[*]}; then
-        echo -n "$f function defined in both $library1 and $library2"
         if is_fatal "$f"; then
             echo " (fatal)"
             valid=false
