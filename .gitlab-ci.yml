@@ -291,7 +291,7 @@ pages:
       artifacts: true
   script:
     - mkdir public
-    - mv _build/meson-logs/coveragereport public/coverage
+    - mv _build/meson-logs/coveragereport public/coverage || true
     - mv _build/doc/html public/doc
   artifacts:
     paths:
