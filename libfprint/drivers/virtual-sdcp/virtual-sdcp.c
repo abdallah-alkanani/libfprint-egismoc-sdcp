@@ -33,7 +33,19 @@
  *   https://github.com/Microsoft/SecureDeviceConnectionProtocol
  */
 
-#define FP_COMPONENT "virtual_sdcp"
+#ifdef TEST_TOD_DRIVER
+/* Use a distinct GType name to avoid colliding with the virtual_sdcp
+ * type already registered inside libfprint.  The type_func prefix and
+ * all generated helper names stay identical so no changes are required
+ * in the function bodies below.  The _##TypeName token produced by
+ * G_DECLARE_FINAL_TYPE undergoes rescan, so this alias is enough to
+ * re-use the same underlying struct. */
+#  define FP_COMPONENT "virtual_sdcp_tod_current"
+#  define _FpDeviceVirtualSdcpTod _FpDeviceVirtualSdcp
+#else
+#  define FP_COMPONENT "virtual_sdcp"
+#endif
+
 #include "fpi-log.h"
 
 #include "fpi-sdcp.h"
@@ -52,8 +64,16 @@ struct _FpDeviceVirtualSdcp
   GPtrArray   *print_ids;
 };
 
+#ifdef TEST_TOD_DRIVER
+G_DECLARE_FINAL_TYPE (FpDeviceVirtualSdcpTod, fpi_device_virtual_sdcp, FPI, DEVICE_VIRTUAL_SDCP, FpSdcpDevice)
+G_DEFINE_TYPE (FpDeviceVirtualSdcpTod, fpi_device_virtual_sdcp, FP_TYPE_SDCP_DEVICE)
+/* Alias old names so every function body below compiles unchanged. */
+#  define FpDeviceVirtualSdcp FpDeviceVirtualSdcpTod
+#  define FpDeviceVirtualSdcpClass FpDeviceVirtualSdcpTodClass
+#else
 G_DECLARE_FINAL_TYPE (FpDeviceVirtualSdcp, fpi_device_virtual_sdcp, FPI, DEVICE_VIRTUAL_SDCP, FpSdcpDevice)
 G_DEFINE_TYPE (FpDeviceVirtualSdcp, fpi_device_virtual_sdcp, FP_TYPE_SDCP_DEVICE)
+#endif
 
 /******************************************************************************/
 
@@ -555,7 +575,13 @@ fpi_device_virtual_sdcp_init (FpDeviceVirtualSdcp *self)
 }
 
 static const FpIdEntry driver_ids[] = {
+#ifdef TEST_TOD_DRIVER
+  /* Use a dedicated env var so that the TOD module does not conflict with
+   * the built-in virtual_sdcp driver (both are present in the test process). */
+  { .virtual_envvar = "FP_VIRTUAL_SDCP_TOD" },
+#else
   { .virtual_envvar = "FP_VIRTUAL_SDCP" },
+#endif
   { .virtual_envvar = NULL }
 };
 
