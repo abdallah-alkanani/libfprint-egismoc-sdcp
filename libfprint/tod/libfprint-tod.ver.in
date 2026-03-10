@@ -114,7 +114,6 @@ global:
     fpi_device_add_timeout;
     fpi_device_capture_complete;
     fpi_device_close_complete;
-    fpi_device_configure_wakeup;
     fpi_device_delete_complete;
     fpi_device_enroll_complete;
     fpi_device_enroll_progress;
@@ -143,14 +142,11 @@ global:
     fpi_device_set_nr_enroll_stages;
     fpi_device_set_scan_type;
     fpi_device_udev_subtype_flags_get_type;
-    fpi_device_update_temp;
     fpi_device_verify_complete;
     fpi_device_verify_report;
     fpi_do_movement_estimation;
-    fpi_image_device_activate;
     fpi_image_device_activate_complete;
     fpi_image_device_close_complete;
-    fpi_image_device_deactivate;
     fpi_image_device_deactivate_complete;
     fpi_image_device_image_captured;
     fpi_image_device_open_complete;
@@ -207,7 +203,12 @@ global:
     fpi_usb_transfer_submit;
     fpi_usb_transfer_submit_sync;
     fpi_usb_transfer_unref;
+
 local:
+    fpi_device_update_temp;
+    fpi_device_configure_wakeup;
+    fpi_image_device_activate;
+    fpi_image_device_deactivate;
     *;
 };
 
@@ -241,14 +242,13 @@ global:
     fpi_byte_writer_change_pos;
     fpi_device_critical_enter;
     fpi_device_critical_leave;
-    fpi_device_resume;
     fpi_device_resume_complete;
-    fpi_device_suspend;
     fpi_device_suspend_complete;
     fpi_ssm_silence_debug;
 
-    /* Keep this always in the current development version */
-    fpi_*;
+local:
+    fpi_device_resume;
+    fpi_device_suspend;
 } LIBFPRINT_TOD_@tod_soversion@_1.92;
 
 LIBFPRINT_TOD_@tod_soversion@_1.95 {
@@ -262,9 +262,7 @@ global:
     fpi_sdcp_claim_get_type;
     fpi_sdcp_claim_hash;
     fpi_sdcp_claim_new;
-    fpi_sdcp_device_connect;
     fpi_sdcp_device_connect_complete;
-    fpi_sdcp_device_enroll;
     fpi_sdcp_device_enroll_commit;
     fpi_sdcp_device_enroll_commit_complete;
     fpi_sdcp_device_get_application_secret;
@@ -272,14 +270,10 @@ global:
     fpi_sdcp_device_get_identify_data;
     fpi_sdcp_device_get_print_id;
     fpi_sdcp_device_get_reconnect_data;
-    fpi_sdcp_device_identify;
     fpi_sdcp_device_identify_complete;
     fpi_sdcp_device_identify_retry;
-    fpi_sdcp_device_list;
     fpi_sdcp_device_list_complete;
-    fpi_sdcp_device_open;
     fpi_sdcp_device_open_complete;
-    fpi_sdcp_device_reconnect;
     fpi_sdcp_device_reconnect_complete;
     fpi_sdcp_device_set_application_secret;
     fpi_sdcp_device_set_identify_data;
@@ -310,4 +304,13 @@ global:
 
     /* Keep this always in the current development version */
     fpi_*;
+
+local:
+    fpi_print_sdcp_set_id;
+    fpi_sdcp_device_open;
+    fpi_sdcp_device_connect;
+    fpi_sdcp_device_reconnect;
+    fpi_sdcp_device_list;
+    fpi_sdcp_device_enroll;
+    fpi_sdcp_device_identify;
 } LIBFPRINT_TOD_@tod_soversion@_1.95;
