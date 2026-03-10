@@ -295,9 +295,13 @@ global:
 LIBFPRINT_TOD_@tod_soversion@_1.95.1 {
 global:
     fpi_device_emulation_mode_enabled;
+    fpi_print_sdcp_get_id;
+    fpi_print_sdcp_set_id;
     fpi_sdcp_claim_hash;
     fpi_sdcp_device_get_application_secret;
     fpi_sdcp_device_get_application_secret_1_95;
+    fpi_sdcp_device_get_print_id_1_95;
+    fpi_sdcp_device_set_print_id_1_95;
     fpi_sdcp_error_new_msg;
     fpi_sdcp_kdf;
     fpi_sdcp_key_agreement;

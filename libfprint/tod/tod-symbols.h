@@ -71,3 +71,6 @@ TOD_VERSIONED_SYMBOL (fpi_sdcp_device_get_application_secret, 1, 95)
 
 TOD_DEFAULT_VERSION_SYMBOL_FULL (fpi_sdcp_verify_connect, 1, 95, 1)
 TOD_VERSIONED_SYMBOL (fpi_sdcp_verify_connect, 1, 95)
+
+TOD_VERSIONED_SYMBOL (fpi_sdcp_device_get_print_id, 1, 95)
+TOD_VERSIONED_SYMBOL (fpi_sdcp_device_set_print_id, 1, 95)

@@ -39,6 +39,10 @@ extern void fpi_ssm_mark_completed_delayed_1_90 (FpiSsm       *machine,
                                                  GCancellable *cancellable);
 extern void fpi_sdcp_device_get_application_secret_1_95 (FpSdcpDevice *device,
                                                          GBytes      **secret);
+extern void fpi_sdcp_device_get_print_id_1_95 (FpPrint *print,
+                                               GBytes **id);
+extern void fpi_sdcp_device_set_print_id_1_95 (FpPrint *print,
+                                               GBytes  *id);
 gboolean fpi_sdcp_verify_connect_1_95 (GBytes                        *host_private_key,
                                        GBytes                        *host_random,
                                        GBytes                        *device_random,

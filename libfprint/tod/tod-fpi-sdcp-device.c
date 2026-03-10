@@ -19,6 +19,7 @@
 
 #include "tod-wrappers.h"
 #include "fpi-sdcp-device.h"
+#include "fpi-print.h"
 
 void
 fpi_sdcp_device_get_application_secret_1_95 (FpSdcpDevice *device,
@@ -27,4 +28,20 @@ fpi_sdcp_device_get_application_secret_1_95 (FpSdcpDevice *device,
   g_return_if_fail (secret != NULL);
 
   *secret = fpi_sdcp_device_get_application_secret (device);
+}
+
+void
+fpi_sdcp_device_get_print_id_1_95 (FpPrint *print,
+                                   GBytes **id)
+{
+  g_return_if_fail (id != NULL && *id == NULL);
+
+  *id = fpi_print_sdcp_get_id (print);
+}
+
+void
+fpi_sdcp_device_set_print_id_1_95 (FpPrint *print,
+                                   GBytes  *id)
+{
+  fpi_print_sdcp_set_id (print, id);
 }
