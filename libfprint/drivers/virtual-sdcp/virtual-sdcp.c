@@ -50,7 +50,6 @@
 
 #include "fpi-sdcp.h"
 #include "fpi-sdcp-claim.h"
-#include "fp-sdcp-device-private.h"
 
 #include "virtual-sdcp.h"
 #include "virtual-sdcp-ca-store-resource.h"

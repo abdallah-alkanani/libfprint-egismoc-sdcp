@@ -75,6 +75,21 @@ static const gchar test_identify_nonce[] = {
 
 /* Internal functions of FpSdcpDevice */
 
+/**
+ * fpi_sdcp_device_get_application_secret:
+ * @self: a #FpSdcpDevice fingerprint device
+ *
+ * Returns the SDCP application secret derived during the connect phase.
+ * This is the shared symmetric secret established via ECDH key agreement
+ * and used as the HMAC key for all subsequent SDCP MAC operations
+ * (reconnect, identify, enrollment ID derivation).
+ *
+ * This function is intended mostly for testing purposes.
+ *
+ * Returns: (transfer full): A #GBytes containing the application secret,
+ *   or %NULL if no SDCP session has been established yet. The caller owns
+ *   the returned value and must call g_bytes_unref() when done.
+ */
 GBytes *
 fpi_sdcp_device_get_application_secret (FpSdcpDevice *self)
 {
@@ -88,6 +103,15 @@ fpi_sdcp_device_get_application_secret (FpSdcpDevice *self)
   return g_steal_pointer (&data);
 }
 
+/**
+ * fpi_sdcp_device_set_application_secret:
+ * @self: a #FpSdcpDevice fingerprint device
+ * @application_secret: (transfer none): A #GBytes containing the application secret
+ *
+ * Stores the SDCP application secret for the current session.
+ * This is called internally by the base class after a successful connect.
+ * It should not be called by drivers directly.
+ */
 void
 fpi_sdcp_device_set_application_secret (FpSdcpDevice *self,
                                         GBytes       *application_secret)

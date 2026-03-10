@@ -200,3 +200,5 @@ void fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
                                         GBytes       *id,
                                         GBytes       *mac,
                                         GError       *error);
+
+GBytes * fpi_sdcp_device_get_application_secret (FpSdcpDevice *self);

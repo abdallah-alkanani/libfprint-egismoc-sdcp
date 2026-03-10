@@ -349,6 +349,7 @@ FpiDeviceSdcpVerificationFlags
 FpSdcpDeviceClass
 
 fpi_sdcp_device_open_complete
+fpi_sdcp_device_get_application_secret
 fpi_sdcp_device_get_connect_data
 fpi_sdcp_device_connect_complete
 fpi_sdcp_device_get_reconnect_data
