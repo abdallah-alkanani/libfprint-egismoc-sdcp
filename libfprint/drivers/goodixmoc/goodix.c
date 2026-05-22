@@ -731,7 +731,7 @@ fp_enroll_update_cb (FpiDeviceGoodixMoc  *self,
                                   NULL,
                                   fpi_device_retry_new (FP_DEVICE_RETRY_REMOVE_FINGER));
     }
-  else if (resp->enroll_update.rollback)
+  else if (resp->enroll_update.rollback || resp->result == 0x73)
     {
       fpi_device_enroll_progress (FP_DEVICE (self),
                                   self->enroll_stage,
