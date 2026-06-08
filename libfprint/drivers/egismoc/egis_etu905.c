@@ -316,7 +316,7 @@ static guint16
 egis_etu905_get_check_bytes (FpiByteReader *reader)
 {
   fp_dbg ("Get check bytes");
-  size_t sum_values = 0;
+  guint64 sum_values = 0;
   guint16 val;
 
   fpi_byte_reader_set_pos (reader, 0);
@@ -560,8 +560,6 @@ egis_etu905_get_delete_cmd (FpDevice *device,
   const guchar *print_data_id = NULL;
   gsize print_data_id_len = 0;
   g_autofree gchar *print_description = NULL;
-  g_autofree guchar *enrolled_print_id = NULL;
-  g_autofree guchar *result = NULL;
   gboolean written = TRUE;
 
   /*
@@ -637,7 +635,8 @@ egis_etu905_get_delete_cmd (FpDevice *device,
       g_object_get (delete_print, "description", &print_description, NULL);
       g_object_get (delete_print, "fpi-data", &print_data, NULL);
 
-      if (!g_variant_check_format_string (print_data, "(@ay)", FALSE))
+      if (!print_data ||
+          !g_variant_check_format_string (print_data, "(@ay)", FALSE))
         {
           fpi_ssm_mark_failed (self->task_ssm,
                                fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
@@ -648,11 +647,21 @@ egis_etu905_get_delete_cmd (FpDevice *device,
       print_data_id = g_variant_get_fixed_array (print_data_id_var,
                                                  &print_data_id_len, sizeof (guchar));
 
-      if (!g_str_has_prefix (print_description, "FP"))
-        fp_dbg ("Fingerprint '%s' was not created by libfprint; deleting anyway.",
-                print_description);
+      if (print_data_id_len != EGIS_ETU905_FINGERPRINT_DATA_SIZE)
+        {
+          fpi_ssm_mark_failed (self->task_ssm,
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
+                                                         "Stored print id has "
+                                                         "unexpected length %zu",
+                                                         print_data_id_len));
+          return NULL;
+        }
 
-      fp_info ("Delete fingerprint %s", print_description);
+      if (!print_description || !g_str_has_prefix (print_description, "FP"))
+        fp_dbg ("Fingerprint '%s' was not created by libfprint; deleting anyway.",
+                print_description ? print_description : "(null)");
+
+      fp_info ("Delete fingerprint %s", print_description ? print_description : "(null)");
 
       written &= fpi_byte_writer_put_data (&writer, print_data_id,
                                            EGIS_ETU905_FINGERPRINT_DATA_SIZE);
