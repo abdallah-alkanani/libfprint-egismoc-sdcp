@@ -33,7 +33,6 @@ struct _FpiDeviceEgisEtu905
   FpiSsm         *task_ssm;
   FpiSsm         *cmd_ssm;
   FpiUsbTransfer *cmd_transfer;
-  GCancellable   *interrupt_cancellable;
   GPtrArray      *enrolled_ids;
   gint            max_enroll_stages;
   guint8          sid[EGIS_ETU905_FINGERPRINT_DATA_SIZE];
@@ -89,8 +88,6 @@ egis_etu905_wait_finger_on_sensor (FpiSsm   *ssm,
                                    FpDevice *device)
 {
   fp_dbg ("Wait for finger on sensor");
-  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-
   g_autoptr(FpiUsbTransfer) transfer = fpi_usb_transfer_new (device);
 
   fpi_usb_transfer_fill_interrupt (transfer, EGIS_ETU905_EP_CMD_INTERRUPT_IN,
@@ -103,7 +100,7 @@ egis_etu905_wait_finger_on_sensor (FpiSsm   *ssm,
 
   fpi_usb_transfer_submit (g_steal_pointer (&transfer),
                            EGIS_ETU905_USB_INTERRUPT_TIMEOUT,
-                           self->interrupt_cancellable,
+                           fpi_device_get_cancellable (device),
                            egis_etu905_finger_on_sensor_cb,
                            NULL);
 }
@@ -1562,35 +1559,10 @@ egis_etu905_open (FpDevice *device)
 }
 
 static void
-egis_etu905_cancel (FpDevice *device)
-{
-  fp_dbg ("Cancel");
-  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-
-  g_cancellable_cancel (self->interrupt_cancellable);
-  g_clear_object (&self->interrupt_cancellable);
-  self->interrupt_cancellable = g_cancellable_new ();
-}
-
-static void
-egis_etu905_suspend (FpDevice *device)
-{
-  fp_dbg ("Suspend");
-
-  egis_etu905_cancel (device);
-  g_cancellable_cancel (fpi_device_get_cancellable (device));
-  fpi_device_suspend_complete (device, NULL);
-}
-
-static void
 egis_etu905_close (FpDevice *device)
 {
   g_autoptr(GError) error = NULL;
   fp_dbg ("Closing device");
-  FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-
-  egis_etu905_cancel (device);
-  g_clear_object (&self->interrupt_cancellable);
 
   g_usb_device_release_interface (fpi_device_get_usb_device (device),
                                   0, 0, &error);
@@ -1619,8 +1591,6 @@ fpi_device_egis_etu905_class_init (FpiDeviceEgisEtu905Class *klass)
 
   dev_class->probe = egis_etu905_probe;
   dev_class->open = egis_etu905_open;
-  dev_class->cancel = egis_etu905_cancel;
-  dev_class->suspend = egis_etu905_suspend;
   dev_class->close = egis_etu905_close;
   dev_class->identify = egis_etu905_identify_verify;
   dev_class->verify = egis_etu905_identify_verify;
