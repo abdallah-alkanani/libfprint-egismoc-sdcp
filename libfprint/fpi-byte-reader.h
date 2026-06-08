@@ -218,7 +218,14 @@ gboolean        fpi_byte_reader_dup_data        (FpiByteReader * reader, guint s
 gboolean        fpi_byte_reader_get_data        (FpiByteReader * reader, guint size, const guint8 ** val);
 
 
+gboolean        fpi_byte_reader_get_data_static (FpiByteReader * reader, guint size, const guint8  * val);
+
+
 gboolean        fpi_byte_reader_peek_data       (const FpiByteReader * reader, guint size, const guint8 ** val);
+
+
+gboolean        fpi_byte_reader_peek_data_static (const FpiByteReader * reader, guint size, guint8   * val);
+
 
 #define fpi_byte_reader_dup_string(reader,str) \
     fpi_byte_reader_dup_string_utf8(reader,str)
@@ -642,6 +649,32 @@ fpi_byte_reader_peek_data_inline (const FpiByteReader * reader, guint size, cons
   return TRUE;
 }
 
+static inline gboolean
+(fpi_byte_reader_get_data_inline_static) (FpiByteReader * reader, guint size, const guint8 * val)
+{
+  g_return_val_if_fail (reader != NULL, FALSE);
+  g_return_val_if_fail (val != NULL, FALSE);
+
+  if (G_UNLIKELY (size > reader->size || fpi_byte_reader_get_remaining_unchecked (reader) < size))
+    return FALSE;
+
+  memcpy ((void *) val, fpi_byte_reader_get_data_unchecked (reader, size), size);
+  return TRUE;
+}
+
+static inline gboolean
+(fpi_byte_reader_peek_data_inline_static) (const FpiByteReader * reader, guint size, guint8 * val)
+{
+  g_return_val_if_fail (reader != NULL, FALSE);
+  g_return_val_if_fail (val != NULL, FALSE);
+
+  if (G_UNLIKELY (size > reader->size || fpi_byte_reader_get_remaining_unchecked (reader) < size))
+    return FALSE;
+
+  memcpy (val, fpi_byte_reader_peek_data_unchecked (reader), size);
+  return TRUE;
+}
+
 static inline guint
 fpi_byte_reader_get_pos_inline (const FpiByteReader * reader)
 {
@@ -672,6 +705,31 @@ fpi_byte_reader_skip_inline (FpiByteReader * reader, guint nbytes)
     G_LIKELY(fpi_byte_reader_peek_data_inline(reader,size,val))
 #define fpi_byte_reader_skip(reader,nbytes) \
     G_LIKELY(fpi_byte_reader_skip_inline(reader,nbytes))
+
+/**
+ * fpi_byte_reader_get_data_static:
+ * @reader: a #FpiByteReader
+ * @val: fixed-size array (e.g. `uint8_t buf[32]`)
+ *
+ * Reads @size bytes from @reader directly into @val, where @size is
+ * deduced via `sizeof()` - only safe with true C arrays.
+ *
+ * Returns: %TRUE on success, %FALSE otherwise.
+ */
+#define fpi_byte_reader_get_data_static(reader,val) \
+    (fpi_byte_reader_get_data_static) (reader,sizeof(val),val)
+
+/**
+ * fpi_byte_reader_peek_data_static:
+ * @reader: a #FpiByteReader
+ * @val: fixed-size array (e.g. `uint8_t buf[32]`)
+ *
+ * Like fpi_byte_reader_get_data_static() but does not advance the position.
+ *
+ * Returns: %TRUE on success, %FALSE otherwise.
+ */
+#define fpi_byte_reader_peek_data_static(reader,val) \
+    (fpi_byte_reader_peek_data_static) (reader,sizeof(val),val)
 
 #endif /* FPI_BYTE_READER_DISABLE_INLINES */
 
