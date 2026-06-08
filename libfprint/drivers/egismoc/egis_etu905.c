@@ -753,6 +753,10 @@ egis_etu905_delete_run_state (FpiSsm   *ssm,
       else
         payload = egis_etu905_get_delete_cmd (device, NULL, &payload_length);
 
+      /* get_delete_cmd already marked task_ssm as failed */
+      if (!payload)
+        return;
+
       egis_etu905_exec_cmd (device, g_steal_pointer (&payload), payload_length,
                             g_free, egis_etu905_delete_cb);
       break;
