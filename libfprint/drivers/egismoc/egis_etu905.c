@@ -494,11 +494,10 @@ egis_etu905_list_fill_enrolled_ids_cb (FpDevice *device,
    */
   while (read)
     {
-      const guint8 *data;
+      const guint8 data[EGIS_ETU905_FINGERPRINT_DATA_SIZE];
       g_autofree gchar *print_id = NULL;
 
-      read &= fpi_byte_reader_get_data (&reader, EGIS_ETU905_FINGERPRINT_DATA_SIZE,
-                                        &data);
+      read &= fpi_byte_reader_get_data_static (&reader, data);
       if (!read)
         break;
 
@@ -1181,14 +1180,15 @@ egis_etu905_identify_check_cb (FpDevice *device,
                                gsize     length_in,
                                GError   *error)
 {
-  fp_dbg ("Identify check callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-  gchar device_print_id[EGIS_ETU905_FINGERPRINT_DATA_SIZE];
+  guint8 device_print_id[EGIS_ETU905_FINGERPRINT_DATA_SIZE];
   FpPrint *print = NULL;
   FpPrint *verify_print = NULL;
   GPtrArray *prints;
   gboolean found = FALSE;
   guint index;
+
+  fp_dbg ("Identify check callback");
 
   if (error)
     {
@@ -1202,28 +1202,33 @@ egis_etu905_identify_check_cb (FpDevice *device,
                                             rsp_identify_match_suffix,
                                             rsp_identify_match_suffix_len))
     {
+      FpiByteReader reader;
+
       /*
          On success, there is a 32 byte array of "something"(?) in chars 14-45
          and then the 32 byte array ID of the matched print comes as chars 46-77
        */
-      memcpy (device_print_id,
-              buffer_in + EGIS_ETU905_IDENTIFY_RESPONSE_PRINT_ID_OFFSET,
-              EGIS_ETU905_FINGERPRINT_DATA_SIZE);
+      fpi_byte_reader_init (&reader, buffer_in, length_in);
+
+      if (!fpi_byte_reader_set_pos (&reader,
+                                    EGIS_ETU905_IDENTIFY_RESPONSE_PRINT_ID_OFFSET) ||
+          !fpi_byte_reader_get_data_static (&reader, device_print_id))
+        {
+          fpi_ssm_mark_failed (self->task_ssm,
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                         "Identify response too "
+                                                         "short for matched print "
+                                                         "id."));
+          return;
+        }
+
+      fp_dbg ("Device-reported matched print id: %s", device_print_id);
 
       /* Create a new print from this device_print_id and then see if it matches
        * the one indicated
        */
       print = fp_print_new (device);
-      egis_etu905_set_print_data (print, device_print_id, NULL);
-
-      if (!print)
-        {
-          fpi_ssm_mark_failed (self->task_ssm,
-                               fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
-                                                         "Failed to build a print from "
-                                                         "device response."));
-          return;
-        }
+      egis_etu905_set_print_data (print, (const char *) device_print_id, NULL);
 
       fp_info ("Identify successful for: %s", fp_print_get_description (print));
 
