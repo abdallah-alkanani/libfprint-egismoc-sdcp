@@ -1347,12 +1347,14 @@ egis_etu905_fw_version_cb (FpDevice *device,
                            gsize     length_in,
                            GError   *error)
 {
-  fp_dbg ("Firmware version callback");
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
-  g_autofree gchar *fw_version = NULL;
-  gsize prefix_length;
-  guchar *fw_version_start;
+  FpiByteReader reader;
+  const guint8 *fw_version_data = NULL;
+  const guint prefix_length = egis_etu905_read_prefix_len + 2 + 3 + 1;
   gsize fw_version_length;
+  g_autofree gchar *fw_version = NULL;
+
+  fp_dbg ("Firmware version callback");
 
   if (error)
     {
@@ -1379,10 +1381,29 @@ egis_etu905_fw_version_cb (FpDevice *device,
    * come with every payload Then we will also skip the carriage return and take
    * all but the last 2 bytes as the FW Version
    */
-  prefix_length = egis_etu905_read_prefix_len + 2 + 3 + 1;
-  fw_version_start = buffer_in + prefix_length;
-  fw_version_length = length_in - prefix_length - rsp_fw_version_suffix_len;
-  fw_version = g_strndup ((gchar *) fw_version_start, fw_version_length);
+  fpi_byte_reader_init (&reader, buffer_in, length_in);
+
+  if (!fpi_byte_reader_set_pos (&reader, prefix_length))
+    {
+      fpi_ssm_mark_failed (self->task_ssm,
+                           fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                     "Device firmware response "
+                                                     "too short for prefix."));
+      return;
+    }
+
+  fw_version_length = fpi_byte_reader_get_remaining (&reader) - rsp_fw_version_suffix_len;
+
+  if (!fpi_byte_reader_get_data (&reader, fw_version_length, &fw_version_data))
+    {
+      fpi_ssm_mark_failed (self->task_ssm,
+                           fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                     "Device firmware response "
+                                                     "too short for version string."));
+      return;
+    }
+
+  fw_version = g_strndup ((gchar *) fw_version_data, fw_version_length);
 
   fp_info ("Device firmware version is %s", fw_version);
 
