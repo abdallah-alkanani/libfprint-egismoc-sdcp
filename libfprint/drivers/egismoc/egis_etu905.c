@@ -110,11 +110,21 @@ egis_etu905_validate_response_prefix (const guchar *buffer_in,
                                       const guchar *valid_prefix,
                                       const gsize   valid_prefix_len)
 {
-  const gboolean result = memcmp (buffer_in +
-                                  (egis_etu905_read_prefix_len +
-                                   EGIS_ETU905_CHECK_BYTES_LENGTH),
-                                  valid_prefix,
-                                  valid_prefix_len) == 0;
+  FpiByteReader reader;
+  const guint8 *data = NULL;
+  gboolean result;
+
+  fpi_byte_reader_init (&reader, buffer_in, buffer_in_len);
+
+  if (!fpi_byte_reader_set_pos (&reader, egis_etu905_read_prefix_len +
+                                EGIS_ETU905_CHECK_BYTES_LENGTH) ||
+      !fpi_byte_reader_get_data (&reader, valid_prefix_len, &data))
+    {
+      fp_dbg ("Response too short for prefix validation");
+      return FALSE;
+    }
+
+  result = memcmp (data, valid_prefix, valid_prefix_len) == 0;
 
   fp_dbg ("Response prefix valid: %s", result ? "yes" : "NO");
   return result;
@@ -126,9 +136,22 @@ egis_etu905_validate_response_suffix (const guchar *buffer_in,
                                       const guchar *valid_suffix,
                                       const gsize   valid_suffix_len)
 {
-  const gboolean result = memcmp (buffer_in + (buffer_in_len - valid_suffix_len),
-                                  valid_suffix,
-                                  valid_suffix_len) == 0;
+  FpiByteReader reader;
+  const guint8 *data = NULL;
+  gboolean result;
+
+  fpi_byte_reader_init (&reader, buffer_in, buffer_in_len);
+
+  /* Guard against unsigned underflow before computing the suffix position. */
+  if (valid_suffix_len > buffer_in_len ||
+      !fpi_byte_reader_set_pos (&reader, buffer_in_len - valid_suffix_len) ||
+      !fpi_byte_reader_get_data (&reader, valid_suffix_len, &data))
+    {
+      fp_dbg ("Response too short for suffix validation");
+      return FALSE;
+    }
+
+  result = memcmp (data, valid_suffix, valid_suffix_len) == 0;
 
   fp_dbg ("Response suffix valid: %s", result ? "yes" : "NO");
   return result;
@@ -1477,10 +1500,10 @@ egis_etu905_dev_init_handler (FpiSsm   *ssm,
 static void
 egis_etu905_probe (FpDevice *device)
 {
-  GUsbDevice *usb_dev;
-  GError *error = NULL;
+  g_autoptr(GError) error = NULL;
   g_autofree gchar *serial = NULL;
   FpiDeviceEgisEtu905 *self = FPI_DEVICE_EGIS_ETU905 (device);
+  GUsbDevice *usb_dev;
 
   fp_dbg ("%s enter --> ", G_STRFUNC);
 
@@ -1489,7 +1512,7 @@ egis_etu905_probe (FpDevice *device)
   if (!g_usb_device_open (usb_dev, &error))
     {
       fp_dbg ("%s g_usb_device_open failed %s", G_STRFUNC, error->message);
-      fpi_device_probe_complete (device, NULL, NULL, error);
+      fpi_device_probe_complete (device, NULL, NULL, g_steal_pointer (&error));
       return;
     }
 
@@ -1497,7 +1520,7 @@ egis_etu905_probe (FpDevice *device)
     {
       fp_dbg ("%s g_usb_device_reset failed %s", G_STRFUNC, error->message);
       g_usb_device_close (usb_dev, NULL);
-      fpi_device_probe_complete (device, NULL, NULL, error);
+      fpi_device_probe_complete (device, NULL, NULL, g_steal_pointer (&error));
       return;
     }
 
@@ -1505,7 +1528,7 @@ egis_etu905_probe (FpDevice *device)
     {
       fp_dbg ("%s g_usb_device_claim_interface failed %s", G_STRFUNC, error->message);
       g_usb_device_close (usb_dev, NULL);
-      fpi_device_probe_complete (device, NULL, NULL, error);
+      fpi_device_probe_complete (device, NULL, NULL, g_steal_pointer (&error));
       return;
     }
 
@@ -1522,7 +1545,7 @@ egis_etu905_probe (FpDevice *device)
       g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (device)),
                                       0, 0, NULL);
       g_usb_device_close (usb_dev, NULL);
-      fpi_device_probe_complete (device, NULL, NULL, error);
+      fpi_device_probe_complete (device, NULL, NULL, g_steal_pointer (&error));
       return;
     }
 
@@ -1536,7 +1559,7 @@ egis_etu905_probe (FpDevice *device)
   g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (device)), 0, 0, NULL);
   g_usb_device_close (usb_dev, NULL);
 
-  fpi_device_probe_complete (device, serial, NULL, error);
+  fpi_device_probe_complete (device, serial, NULL, NULL);
 }
 
 static void
