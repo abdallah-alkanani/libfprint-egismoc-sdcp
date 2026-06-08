@@ -35,7 +35,6 @@ struct _FpiDeviceEgisEtu905
   FpiUsbTransfer *cmd_transfer;
   GPtrArray      *enrolled_ids;
   gint            max_enroll_stages;
-  guint8          sid[EGIS_ETU905_FINGERPRINT_DATA_SIZE];
 };
 
 G_DEFINE_TYPE (FpiDeviceEgisEtu905, fpi_device_egis_etu905, FP_TYPE_DEVICE);
@@ -908,20 +907,6 @@ egis_etu905_enroll_begin_cb (FpDevice *device,
       fpi_ssm_mark_failed (self->task_ssm, error);
       return;
     }
-
-  FpiByteReader reader;
-
-  fpi_byte_reader_init (&reader, buffer_in, length_in);
-
-  fpi_byte_reader_set_pos (&reader, EGIS_ETU905_LIST_RESPONSE_PREFIX_SIZE);
-
-  const guint8 *data = NULL;
-
-  fpi_byte_reader_get_data (&reader, EGIS_ETU905_FINGERPRINT_DATA_SIZE,
-                            &data);
-
-  if (data)
-    memcpy (self->sid, data, EGIS_ETU905_FINGERPRINT_DATA_SIZE);
 
   fpi_ssm_next_state (self->task_ssm);
 }
