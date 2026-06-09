@@ -1202,6 +1202,7 @@ egis_etu905_identify_check_cb (FpDevice *device,
                                             rsp_identify_match_suffix,
                                             rsp_identify_match_suffix_len))
     {
+      gboolean id_known = FALSE;
       FpiByteReader reader;
 
       /*
@@ -1223,6 +1224,32 @@ egis_etu905_identify_check_cb (FpDevice *device,
         }
 
       fp_dbg ("Device-reported matched print id: %s", device_print_id);
+
+      /* While the returned ID should indeed be part of the enrolled list, since
+       * we got it, let's double check that this is really the case.
+       */
+      if (self->enrolled_ids)
+        {
+          for (guint i = 0; i < self->enrolled_ids->len; i++)
+            {
+              if (memcmp (g_ptr_array_index (self->enrolled_ids, i),
+                          device_print_id,
+                          EGIS_ETU905_FINGERPRINT_DATA_SIZE) == 0)
+                {
+                  id_known = TRUE;
+                  break;
+                }
+            }
+        }
+
+      if (!id_known)
+        {
+          fpi_ssm_mark_failed (self->task_ssm,
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                         "Device reported a match "
+                                                         "for an unknown print id."));
+          return;
+        }
 
       /* Create a new print from this device_print_id and then see if it matches
        * the one indicated
