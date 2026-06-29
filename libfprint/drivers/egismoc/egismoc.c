@@ -123,7 +123,7 @@ egismoc_validate_response_prefix (const guchar *buffer_in,
                                   const gsize   valid_prefix_len)
 {
   const gboolean result = memcmp (buffer_in +
-                                  (egismoc_read_prefix_len +
+                                  (G_N_ELEMENTS (egismoc_read_prefix) +
                                    EGISMOC_CHECK_BYTES_LENGTH),
                                   valid_prefix,
                                   valid_prefix_len) == 0;
@@ -197,7 +197,7 @@ egismoc_cmd_receive_cb (FpiUsbTransfer *transfer,
       fpi_ssm_mark_failed (transfer->ssm, error);
       return;
     }
-  if (data == NULL || transfer->actual_length < egismoc_read_prefix_len)
+  if (data == NULL || transfer->actual_length < G_N_ELEMENTS (egismoc_read_prefix))
     {
       fpi_ssm_mark_failed (transfer->ssm,
                            fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
@@ -321,7 +321,7 @@ egismoc_exec_cmd (FpDevice         *device,
    * egismoc_get_check_bytes() method and payload is what is passed via the cmd
    * parameter
    */
-  buffer_out_length = egismoc_write_prefix_len
+  buffer_out_length = G_N_ELEMENTS (egismoc_write_prefix)
                       + EGISMOC_CHECK_BYTES_LENGTH
                       + cmd_length;
 
@@ -330,7 +330,7 @@ egismoc_exec_cmd (FpDevice         *device,
 
   /* Prefix */
   written &= fpi_byte_writer_put_data (&writer, egismoc_write_prefix,
-                                       egismoc_write_prefix_len);
+                                       G_N_ELEMENTS (egismoc_write_prefix));
 
   /* Check Bytes - leave them as 00 for now then later generate and copy over
    * the real ones */
@@ -342,7 +342,7 @@ egismoc_exec_cmd (FpDevice         *device,
   /* Now fetch and set the "real" check bytes based on the currently
    * assembled payload */
   check_value = egismoc_get_check_bytes (FPI_BYTE_READER (&writer));
-  fpi_byte_writer_set_pos (&writer, egismoc_write_prefix_len);
+  fpi_byte_writer_set_pos (&writer, G_N_ELEMENTS (egismoc_write_prefix));
   written &= fpi_byte_writer_put_uint16_be (&writer, check_value);
 
   /* destroy cmd if requested */
@@ -492,7 +492,7 @@ egismoc_list_run_state (FpiSsm   *ssm,
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case LIST_GET_ENROLLED_IDS:
-      egismoc_exec_cmd (device, cmd_list, cmd_list_len, NULL,
+      egismoc_exec_cmd (device, cmd_list, G_N_ELEMENTS (cmd_list), NULL,
                         egismoc_list_fill_enrolled_ids_cb);
       break;
 
@@ -557,7 +557,7 @@ egismoc_get_delete_cmd (FpDevice *device,
   const gsize body_length = sizeof (guchar) * EGISMOC_FINGERPRINT_DATA_SIZE *
                             num_to_delete;
   /* total_length is the 6 various bytes plus prefix and body payload */
-  const gsize total_length = (sizeof (guchar) * 6) + cmd_delete_prefix_len +
+  const gsize total_length = (sizeof (guchar) * 6) + G_N_ELEMENTS (cmd_delete_prefix) +
                              body_length;
 
   /* pre-fill entire payload with 00s */
@@ -585,7 +585,7 @@ egismoc_get_delete_cmd (FpDevice *device,
 
   /* command prefix */
   written &= fpi_byte_writer_put_data (&writer, cmd_delete_prefix,
-                                       cmd_delete_prefix_len);
+                                       G_N_ELEMENTS (cmd_delete_prefix));
 
   /* 2-bytes size logic for counter again */
   if (num_to_delete > 7)
@@ -665,7 +665,7 @@ egismoc_delete_cb (FpDevice *device,
   if (egismoc_validate_response_prefix (buffer_in,
                                         length_in,
                                         rsp_delete_success_prefix,
-                                        rsp_delete_success_prefix_len))
+                                        G_N_ELEMENTS (rsp_delete_success_prefix)))
     {
       if (fpi_device_get_current_action (device) == FPI_DEVICE_ACTION_CLEAR_STORAGE)
         {
@@ -703,7 +703,7 @@ egismoc_delete_run_state (FpiSsm   *ssm,
     {
     case DELETE_GET_ENROLLED_IDS:
       /* get enrolled_ids from device for use building delete payload below */
-      egismoc_exec_cmd (device, cmd_list, cmd_list_len, NULL,
+      egismoc_exec_cmd (device, cmd_list, G_N_ELEMENTS (cmd_list), NULL,
                         egismoc_list_fill_enrolled_ids_cb);
       break;
 
@@ -813,11 +813,11 @@ egismoc_read_capture_cb (FpDevice *device,
   if (egismoc_validate_response_prefix (buffer_in,
                                         length_in,
                                         rsp_read_success_prefix,
-                                        rsp_read_success_prefix_len) &&
+                                        G_N_ELEMENTS (rsp_read_success_prefix)) &&
       egismoc_validate_response_suffix (buffer_in,
                                         length_in,
                                         rsp_read_success_suffix,
-                                        rsp_read_success_suffix_len))
+                                        G_N_ELEMENTS (rsp_read_success_suffix)))
     {
       egismoc_enroll_status_report (device, enroll_print,
                                     ENROLL_STATUS_PARTIAL_OK, NULL);
@@ -830,18 +830,18 @@ egismoc_read_capture_cb (FpDevice *device,
       if (egismoc_validate_response_prefix (buffer_in,
                                             length_in,
                                             rsp_read_offcenter_prefix,
-                                            rsp_read_offcenter_prefix_len) &&
+                                            G_N_ELEMENTS (rsp_read_offcenter_prefix)) &&
           egismoc_validate_response_suffix (buffer_in,
                                             length_in,
                                             rsp_read_offcenter_suffix,
-                                            rsp_read_offcenter_suffix_len))
+                                            G_N_ELEMENTS (rsp_read_offcenter_suffix)))
         error = fpi_device_retry_new (FP_DEVICE_RETRY_CENTER_FINGER);
 
       /* "Sensor is dirty" */
       else if (egismoc_validate_response_prefix (buffer_in,
                                                  length_in,
                                                  rsp_read_dirty_prefix,
-                                                 rsp_read_dirty_prefix_len))
+                                                 G_N_ELEMENTS (rsp_read_dirty_prefix)))
         error = fpi_device_retry_new_msg (FP_DEVICE_RETRY_REMOVE_FINGER,
                                           "Your device is having trouble recognizing you. "
                                           "Make sure your sensor is clean.");
@@ -879,7 +879,7 @@ egismoc_enroll_check_cb (FpDevice *device,
   if (egismoc_validate_response_suffix (buffer_in,
                                         length_in,
                                         rsp_check_not_yet_enrolled_suffix,
-                                        rsp_check_not_yet_enrolled_suffix_len))
+                                        G_N_ELEMENTS (rsp_check_not_yet_enrolled_suffix)))
     fpi_ssm_next_state (self->task_ssm);
   else
     egismoc_enroll_status_report (device, NULL, ENROLL_STATUS_DUPLICATE,
@@ -924,8 +924,8 @@ egismoc_get_check_cmd (FpDevice *device,
   /* prefix length can depend on the type */
   const gsize check_prefix_length = (fpi_device_get_driver_data (device) &
                                      EGISMOC_DRIVER_CHECK_PREFIX_TYPE2) ?
-                                    cmd_check_prefix_type2_len :
-                                    cmd_check_prefix_type1_len;
+                                    G_N_ELEMENTS (cmd_check_prefix_type2) :
+                                    G_N_ELEMENTS (cmd_check_prefix_type1);
 
   /* total_length is the 6 various bytes plus all other prefixes/suffixes and
    * the body payload */
@@ -933,7 +933,7 @@ egismoc_get_check_cmd (FpDevice *device,
                              + check_prefix_length
                              + EGISMOC_CMD_CHECK_SEPARATOR_LENGTH
                              + body_length
-                             + cmd_check_suffix_len;
+                             + G_N_ELEMENTS (cmd_check_suffix);
 
   /* pre-fill entire payload with 00s */
   fpi_byte_writer_init_with_size (&writer, total_length, TRUE);
@@ -965,10 +965,10 @@ egismoc_get_check_cmd (FpDevice *device,
   /* command prefix */
   if (fpi_device_get_driver_data (device) & EGISMOC_DRIVER_CHECK_PREFIX_TYPE2)
     written &= fpi_byte_writer_put_data (&writer, cmd_check_prefix_type2,
-                                         cmd_check_prefix_type2_len);
+                                         G_N_ELEMENTS (cmd_check_prefix_type2));
   else
     written &= fpi_byte_writer_put_data (&writer, cmd_check_prefix_type1,
-                                         cmd_check_prefix_type1_len);
+                                         G_N_ELEMENTS (cmd_check_prefix_type1));
 
   /* 2-bytes size logic for counter again */
   if (self->enrolled_ids->len > 6)
@@ -998,7 +998,7 @@ egismoc_get_check_cmd (FpDevice *device,
 
   /* command suffix */
   written &= fpi_byte_writer_put_data (&writer, cmd_check_suffix,
-                                       cmd_check_suffix_len);
+                                       G_N_ELEMENTS (cmd_check_suffix));
   g_assert (written);
 
   if (length_out)
@@ -1023,7 +1023,7 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
     {
     case ENROLL_GET_ENROLLED_IDS:
       /* get enrolled_ids from device for use in check stages below */
-      egismoc_exec_cmd (device, cmd_list, cmd_list_len,
+      egismoc_exec_cmd (device, cmd_list, G_N_ELEMENTS (cmd_list),
                         NULL, egismoc_list_fill_enrolled_ids_cb);
       break;
 
@@ -1038,12 +1038,12 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
       break;
 
     case ENROLL_SENSOR_RESET:
-      egismoc_exec_cmd (device, cmd_sensor_reset, cmd_sensor_reset_len,
+      egismoc_exec_cmd (device, cmd_sensor_reset, G_N_ELEMENTS (cmd_sensor_reset),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
     case ENROLL_SENSOR_ENROLL:
-      egismoc_exec_cmd (device, cmd_sensor_enroll, cmd_sensor_enroll_len,
+      egismoc_exec_cmd (device, cmd_sensor_enroll, G_N_ELEMENTS (cmd_sensor_enroll),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1052,7 +1052,7 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
       break;
 
     case ENROLL_SENSOR_CHECK:
-      egismoc_exec_cmd (device, cmd_sensor_check, cmd_sensor_check_len,
+      egismoc_exec_cmd (device, cmd_sensor_check, G_N_ELEMENTS (cmd_sensor_check),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1063,17 +1063,17 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
       break;
 
     case ENROLL_START:
-      egismoc_exec_cmd (device, cmd_enroll_starting, cmd_enroll_starting_len,
+      egismoc_exec_cmd (device, cmd_enroll_starting, G_N_ELEMENTS (cmd_enroll_starting),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
     case ENROLL_CAPTURE_SENSOR_RESET:
-      egismoc_exec_cmd (device, cmd_sensor_reset, cmd_sensor_reset_len,
+      egismoc_exec_cmd (device, cmd_sensor_reset, G_N_ELEMENTS (cmd_sensor_reset),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
     case ENROLL_CAPTURE_SENSOR_START_CAPTURE:
-      egismoc_exec_cmd (device, cmd_sensor_start_capture, cmd_sensor_start_capture_len,
+      egismoc_exec_cmd (device, cmd_sensor_start_capture, G_N_ELEMENTS (cmd_sensor_start_capture),
                         NULL,
                         egismoc_task_ssm_next_state_cb);
       break;
@@ -1083,12 +1083,12 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
       break;
 
     case ENROLL_CAPTURE_READ_RESPONSE:
-      egismoc_exec_cmd (device, cmd_read_capture, cmd_read_capture_len,
+      egismoc_exec_cmd (device, cmd_read_capture, G_N_ELEMENTS (cmd_read_capture),
                         NULL, egismoc_read_capture_cb);
       break;
 
     case ENROLL_COMMIT_START:
-      egismoc_exec_cmd (device, cmd_commit_starting, cmd_commit_starting_len,
+      egismoc_exec_cmd (device, cmd_commit_starting, G_N_ELEMENTS (cmd_commit_starting),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1101,7 +1101,7 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
 
       fpi_byte_writer_init (&writer);
       if (!fpi_byte_writer_put_data (&writer, cmd_new_print_prefix,
-                                     cmd_new_print_prefix_len))
+                                     G_N_ELEMENTS (cmd_new_print_prefix)))
         {
           fpi_ssm_mark_failed (ssm, fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
           break;
@@ -1120,7 +1120,7 @@ egismoc_enroll_run_state (FpiSsm   *ssm,
       break;
 
     case ENROLL_COMMIT_SENSOR_RESET:
-      egismoc_exec_cmd (device, cmd_sensor_reset, cmd_sensor_reset_len,
+      egismoc_exec_cmd (device, cmd_sensor_reset, G_N_ELEMENTS (cmd_sensor_reset),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1172,7 +1172,7 @@ egismoc_identify_check_cb (FpDevice *device,
   if (egismoc_validate_response_suffix (buffer_in,
                                         length_in,
                                         rsp_identify_match_suffix,
-                                        rsp_identify_match_suffix_len))
+                                        G_N_ELEMENTS (rsp_identify_match_suffix)))
     {
       /*
          On success, there is a 32 byte array of "something"(?) in chars 14-45
@@ -1227,7 +1227,7 @@ egismoc_identify_check_cb (FpDevice *device,
   else if (egismoc_validate_response_suffix (buffer_in,
                                              length_in,
                                              rsp_identify_notmatch_suffix,
-                                             rsp_identify_notmatch_suffix_len))
+                                             G_N_ELEMENTS (rsp_identify_notmatch_suffix)))
     {
       fp_info ("Print was not identified by the device");
 
@@ -1259,7 +1259,7 @@ egismoc_identify_run_state (FpiSsm   *ssm,
     {
     case IDENTIFY_GET_ENROLLED_IDS:
       /* get enrolled_ids from device for use in check stages below */
-      egismoc_exec_cmd (device, cmd_list, cmd_list_len,
+      egismoc_exec_cmd (device, cmd_list, G_N_ELEMENTS (cmd_list),
                         NULL, egismoc_list_fill_enrolled_ids_cb);
       break;
 
@@ -1274,12 +1274,12 @@ egismoc_identify_run_state (FpiSsm   *ssm,
       break;
 
     case IDENTIFY_SENSOR_RESET:
-      egismoc_exec_cmd (device, cmd_sensor_reset, cmd_sensor_reset_len,
+      egismoc_exec_cmd (device, cmd_sensor_reset, G_N_ELEMENTS (cmd_sensor_reset),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
     case IDENTIFY_SENSOR_IDENTIFY:
-      egismoc_exec_cmd (device, cmd_sensor_identify, cmd_sensor_identify_len,
+      egismoc_exec_cmd (device, cmd_sensor_identify, G_N_ELEMENTS (cmd_sensor_identify),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1288,7 +1288,7 @@ egismoc_identify_run_state (FpiSsm   *ssm,
       break;
 
     case IDENTIFY_SENSOR_CHECK:
-      egismoc_exec_cmd (device, cmd_sensor_check, cmd_sensor_check_len,
+      egismoc_exec_cmd (device, cmd_sensor_check, G_N_ELEMENTS (cmd_sensor_check),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1299,7 +1299,7 @@ egismoc_identify_run_state (FpiSsm   *ssm,
       break;
 
     case IDENTIFY_COMPLETE_SENSOR_RESET:
-      egismoc_exec_cmd (device, cmd_sensor_reset, cmd_sensor_reset_len,
+      egismoc_exec_cmd (device, cmd_sensor_reset, G_N_ELEMENTS (cmd_sensor_reset),
                         NULL, egismoc_task_ssm_next_state_cb);
       break;
 
@@ -1357,7 +1357,7 @@ egismoc_fw_version_cb (FpDevice *device,
   if (!egismoc_validate_response_suffix (buffer_in,
                                          length_in,
                                          rsp_fw_version_suffix,
-                                         rsp_fw_version_suffix_len))
+                                         G_N_ELEMENTS (rsp_fw_version_suffix)))
     {
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -1372,9 +1372,9 @@ egismoc_fw_version_cb (FpDevice *device,
    * come with every payload Then we will also skip the carriage return and take
    * all but the last 2 bytes as the FW Version
    */
-  prefix_length = egismoc_read_prefix_len + 2 + 3 + 1;
+  prefix_length = G_N_ELEMENTS (egismoc_read_prefix) + 2 + 3 + 1;
   fw_version_start = buffer_in + prefix_length;
-  fw_version_length = length_in - prefix_length - rsp_fw_version_suffix_len;
+  fw_version_length = length_in - prefix_length - G_N_ELEMENTS (rsp_fw_version_suffix);
   fw_version = g_strndup ((gchar *) fw_version_start, fw_version_length);
 
   fp_info ("Device firmware version is %s", fw_version);
@@ -1448,7 +1448,7 @@ egismoc_dev_init_handler (FpiSsm   *ssm,
       break;
 
     case DEV_GET_FW_VERSION:
-      egismoc_exec_cmd (device, cmd_fw_version, cmd_fw_version_len,
+      egismoc_exec_cmd (device, cmd_fw_version, G_N_ELEMENTS (cmd_fw_version),
                         NULL, egismoc_fw_version_cb);
       return;
 
