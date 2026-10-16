@@ -113,7 +113,11 @@ across fprintd restarts, delete, 5/5 matches, 5/5 wrong-finger rejections,
 and PAM. An enrollment following one that timed out accepted a wrong finger
 4 times in 6; a clean re-enrollment rejected it. The driver does not send the
 enrollment discard command (`50 16 04`) that `egis_etu905` sends when an
-enrollment is cancelled; whether aborted captures carry over is untested.
+enrollment is cancelled. A cancelled enrollment did not carry over on `05a1`
+or, in fusuma's repeat of the test, on `0584`: after part of an enrollment
+with one finger was cancelled, another finger was enrolled, and its print
+rejected the first finger 5/5 while matching its own. An enrollment that ends
+in a timeout, as fusuma's bad one did, is untested.
 
 The released core preserves the experimental driver's FP3 SDCP on-disk format:
 a nested variant containing a single 32-byte enrollment ID. Both libraries
