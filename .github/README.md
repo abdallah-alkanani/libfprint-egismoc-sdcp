@@ -18,15 +18,24 @@ driver's protocol mapping and trust rules.
 
 | | |
 | --- | --- |
-| Tested hardware | `1c7a:05a1` only |
+| Tested with this branch | `1c7a:05a1` |
 | Daily use | 597 fingerprint logins through `pam_fprintd` (GDM, polkit, sudo) from 2026-09-21 to 2026-10-16 with the build of the first five commits, including suspend during identify |
 | This branch on hardware | Enroll, duplicate rejection, verify, wrong-finger no-match, delete, verify after a cancelled verify, and repeated reopen, all through fprintd on 2026-10-16 |
 | Automated tests | 73 native and 114 TOD-enabled test jobs; unit suites and 21 USB replays also under ASan and UBSan |
-| Not yet tested on hardware | Hibernation and other Egis models; failed opens and deleting pre-SDCP records are covered by replays only |
+| Not yet tested on hardware | Hibernation and the other readers below; failed opens and deleting pre-SDCP records are covered by replays only |
 
-The driver also lists `1c7a:0582`, `0583`, `0584`, `0586`, `0587`, `0588`
-and `05a5`, as MR !547 does. They may need different enrollment stages or
-statuses; reports from those models are welcome.
+## Readers
+
+| USB ID | Found in | Status |
+| --- | --- | --- |
+| `1c7a:05a1` | Samsung Galaxy Book (ETU905A80-E) | Tested with this branch |
+| `1c7a:05aa` | HONOR MagicBook Pro 14 2025 (ET171) | Enroll, verify, PAM and suspend tested by [Philip Walsh][honor] with his MR !547 build; his patch is included |
+| `1c7a:05b1` | Fujitsu (ETU906Axx-E) | Open, enroll and verify reported in [MR !671][mr671] with the MR !547 driver |
+| `1c7a:05a5` | Samsung Galaxy Book4/Book5 | Reported working with MR !547 builds by [Roman2K][roman2k]; his longer finger wait is included |
+| `1c7a:0582`, `0583`, `0584`, `0586`, `0587`, `0588` | Various | Listed by MR !547; not tested with this branch |
+
+Find your reader's ID with `lsusb | grep 1c7a`. Reports from any of these
+models are welcome, working or not.
 
 ## Build
 
@@ -137,8 +146,10 @@ template IDs and MACs but no session keys. On Debian and Ubuntu fprintd is
 
 libfprint is LGPL-2.1-or-later; see [COPYING](../COPYING). The Egis protocol
 work and SDCP driver are by Joshua Grisham; the shared SDCP core by Benjamin
-Berg, Joshua Grisham and Marco Trevisan; the identified-print fix follows
-Philip Walsh's [honor-fmbp-libfprint-sdcp][honor].
+Berg, Joshua Grisham and Marco Trevisan. Philip Walsh contributed the
+`05aa` support and the identified-print fix, konoe-akitoshi the `05b1` entry
+and offline metadata check, Roman2K the longer finger wait, and alexeyru the
+temperature-model fix.
 
 [sdcp]: https://github.com/microsoft/SecureDeviceConnectionProtocol/wiki/Secure-Device-Connection-Protocol
 [tod]: https://gitlab.freedesktop.org/3v1n0/libfprint/-/tree/v1.95.2+tod1
@@ -146,3 +157,5 @@ Philip Walsh's [honor-fmbp-libfprint-sdcp][honor].
 [#850]: https://gitlab.freedesktop.org/libfprint/libfprint/-/issues/850
 [#889]: https://gitlab.freedesktop.org/libfprint/libfprint/-/issues/889
 [honor]: https://github.com/drphilth/honor-fmbp-libfprint-sdcp
+[mr671]: https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/671
+[roman2k]: https://github.com/Roman2K/samsung-galaxybook-libfprint
