@@ -663,7 +663,12 @@ fpi_sdcp_kdf (GBytes      *key,
   params[i++] = OSSL_PARAM_construct_end ();
 
   kdf = EVP_KDF_fetch (NULL, "KBKDF", NULL);
-  kdf_ctx = EVP_KDF_CTX_new (kdf);
+  if (!kdf || !(kdf_ctx = EVP_KDF_CTX_new (kdf)))
+    {
+      g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                        "Failed to create SDCP key derivation context"));
+      return NULL;
+    }
 
   secret = g_malloc0 (length);
   if (!EVP_KDF_derive (kdf_ctx, secret, length, params))
@@ -698,7 +703,12 @@ fpi_sdcp_mac (GBytes      *application_secret,
   g_return_val_if_fail (data_a != NULL || data_b != NULL, NULL);
 
   hmac = EVP_MAC_fetch (NULL, "hmac", NULL);
-  hmac_ctx = EVP_MAC_CTX_new (hmac);
+  if (!hmac || !(hmac_ctx = EVP_MAC_CTX_new (hmac)))
+    {
+      g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                        "Failed to create SDCP HMAC context"));
+      return NULL;
+    }
 
   if (!EVP_MAC_init (hmac_ctx,
                      g_bytes_get_data (application_secret, NULL),
@@ -904,7 +914,7 @@ fpi_sdcp_get_private_pkey (GBytes  *private_key,
 
   /* import pkey from params */
   ctx = EVP_PKEY_CTX_new_from_name (NULL, "EC", NULL);
-  if (!EVP_PKEY_fromdata_init (ctx))
+  if (!ctx || EVP_PKEY_fromdata_init (ctx) != 1)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error initializing key import"));
@@ -944,14 +954,14 @@ fpi_sdcp_get_public_pkey (GBytes  *public_key,
       return NULL;
     }
 
-  if (!EVP_PKEY_fromdata_init (ctx))
+  if (EVP_PKEY_fromdata_init (ctx) != 1)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error initializing public key import"));
       return NULL;
     }
 
-  if (!EVP_PKEY_fromdata (ctx, &key, EVP_PKEY_PUBLIC_KEY, params))
+  if (EVP_PKEY_fromdata (ctx, &key, EVP_PKEY_PUBLIC_KEY, params) != 1)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error importing public key"));
@@ -982,14 +992,14 @@ fpi_sdcp_key_agreement (GBytes  *private_key,
 
   ctx = EVP_PKEY_CTX_new_from_pkey (NULL, host_pkey, NULL);
 
-  if (!EVP_PKEY_derive_init (ctx))
+  if (!ctx || EVP_PKEY_derive_init (ctx) != 1)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error initializing key agreement"));
       return NULL;
     }
 
-  if (!EVP_PKEY_derive_set_peer (ctx, device_pkey))
+  if (EVP_PKEY_derive_set_peer (ctx, device_pkey) != 1)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error setting peer key for key agreement"));
@@ -997,7 +1007,7 @@ fpi_sdcp_key_agreement (GBytes  *private_key,
     }
 
   /* Get the size by passing NULL as the buffer */
-  if (!EVP_PKEY_derive (ctx, NULL, &key_agreement_len))
+  if (EVP_PKEY_derive (ctx, NULL, &key_agreement_len) != 1)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error sizing key agreement output"));
@@ -1013,7 +1023,7 @@ fpi_sdcp_key_agreement (GBytes  *private_key,
 
   /* Then get the derived shared secret using the fetched size */
   key_agreement = g_malloc0 (key_agreement_len);
-  if (!EVP_PKEY_derive (ctx, key_agreement, &key_agreement_len))
+  if (EVP_PKEY_derive (ctx, key_agreement, &key_agreement_len) != 1)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error deriving key agreement"));

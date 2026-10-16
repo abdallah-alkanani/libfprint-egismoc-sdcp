@@ -458,10 +458,11 @@ egismoc_list_fill_enrolled_ids_cb (FpDevice *device,
 {
   fp_dbg ("List callback");
   FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
-  const guint8 *data;
-  guchar *enrollment_id = NULL;
   FpiByteReader reader;
-  gboolean read = TRUE;
+  guint32 payload_length;
+  const guint8 success[] = {0x90, 0x00};
+  const guint8 empty[] = {0x65, 0xfe};
+  gboolean valid_status;
 
   if (error)
     {
@@ -469,33 +470,35 @@ egismoc_list_fill_enrolled_ids_cb (FpDevice *device,
       return;
     }
 
+  fpi_byte_reader_init (&reader, buffer_in, length_in);
+  /* The upstream recording reports 65fe, not 9000, for an empty database. */
+  valid_status = egismoc_validate_response_suffix (buffer_in, length_in, success, sizeof (success)) ||
+                 (length_in == EGISMOC_LIST_RESPONSE_PREFIX_SIZE + EGISMOC_LIST_RESPONSE_SUFFIX_SIZE &&
+                  egismoc_validate_response_suffix (buffer_in, length_in, empty, sizeof (empty)));
+  /* Empty lists still have framing and a recognized status. Reject incomplete
+   * IDs or error responses instead of treating them as an empty/partial list. */
+  if (length_in < EGISMOC_LIST_RESPONSE_PREFIX_SIZE + EGISMOC_LIST_RESPONSE_SUFFIX_SIZE ||
+      memcmp (buffer_in, egismoc_read_prefix, egismoc_read_prefix_len) != 0 ||
+      !fpi_byte_reader_set_pos (&reader, egismoc_read_prefix_len + EGISMOC_CHECK_BYTES_LENGTH) ||
+      !fpi_byte_reader_get_uint32_be (&reader, &payload_length) ||
+      payload_length != length_in - EGISMOC_LIST_RESPONSE_PREFIX_SIZE ||
+      (length_in - EGISMOC_LIST_RESPONSE_PREFIX_SIZE - EGISMOC_LIST_RESPONSE_SUFFIX_SIZE) %
+      FPI_SDCP_ENROLLMENT_ID_SIZE != 0 ||
+      !valid_status)
+    {
+      fpi_ssm_mark_failed (self->task_ssm,
+                           fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                     "Malformed template list response"));
+      return;
+    }
+
   g_clear_pointer (&self->enrolled_ids, g_ptr_array_unref);
   self->enrolled_ids = g_ptr_array_new_with_free_func (g_free);
-
-  fpi_byte_reader_init (&reader, buffer_in, length_in);
-
-  read &= fpi_byte_reader_set_pos (&reader, EGISMOC_LIST_RESPONSE_PREFIX_SIZE);
-
-  /*
-   * Each enrollment_id will be returned in this response as a 32 byte array
-   * The other stuff in the payload is 16 bytes long, so if there is at least 1
-   * print then the length should be at least 16+32=48 bytes long
-   */
-  while (read)
-    {
-      read &= fpi_byte_reader_get_data (&reader, FPI_SDCP_ENROLLMENT_ID_SIZE, &data);
-      if (!read)
-        break;
-
-      enrollment_id = g_malloc0 (FPI_SDCP_ENROLLMENT_ID_SIZE);
-      memcpy (enrollment_id, data, FPI_SDCP_ENROLLMENT_ID_SIZE);
-
-      fp_dbg ("Device ID %0d:", self->enrolled_ids->len + 1);
-      fp_dbg_hex_dump_bytes (enrollment_id, FPI_SDCP_ENROLLMENT_ID_SIZE);
-
-      g_ptr_array_add (self->enrolled_ids, g_steal_pointer (&enrollment_id));
-      g_free (enrollment_id);
-    }
+  for (gsize pos = EGISMOC_LIST_RESPONSE_PREFIX_SIZE;
+       pos < length_in - EGISMOC_LIST_RESPONSE_SUFFIX_SIZE;
+       pos += FPI_SDCP_ENROLLMENT_ID_SIZE)
+    g_ptr_array_add (self->enrolled_ids,
+                     g_memdup2 (buffer_in + pos, FPI_SDCP_ENROLLMENT_ID_SIZE));
 
   fp_info ("Number of currently enrolled fingerprints on the device is %d",
            self->enrolled_ids->len);
@@ -739,7 +742,6 @@ egismoc_delete_run_state (FpiSsm   *ssm,
               error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_NOT_FOUND,
                                                 "Clear attempted when there are no prints "
                                                 "currently stored on the device");
-              fpi_device_delete_complete (device, error);
               fpi_ssm_mark_failed (self->task_ssm, error);
               return;
             }
@@ -1051,9 +1053,16 @@ egismoc_enroll_check_cb (FpDevice *device,
                                         rsp_check_not_yet_enrolled_suffix,
                                         rsp_check_not_yet_enrolled_suffix_len))
     fpi_ssm_next_state (self->task_ssm);
-  else
+  else if (egismoc_validate_response_suffix (buffer_in,
+                                             length_in,
+                                             rsp_check_enrolled_suffix,
+                                             rsp_check_enrolled_suffix_len))
     egismoc_enroll_status_report (device, NULL, ENROLL_STATUS_DUPLICATE,
                                   fpi_device_error_new (FP_DEVICE_ERROR_DATA_DUPLICATE));
+  else
+    fpi_ssm_mark_failed (self->task_ssm,
+                         fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                   "Unrecognized enrollment duplicate-check response"));
 }
 
 /*
@@ -1468,6 +1477,32 @@ egismoc_identify (FpSdcpDevice *sdcp_device)
   fpi_ssm_start (self->task_ssm, egismoc_task_ssm_done);
 }
 
+static void
+egismoc_connect_complete (FpSdcpDevice *sdcp_device,
+                          GBytes       *device_random,
+                          FpiSdcpClaim *claim,
+                          GBytes       *mac,
+                          GError       *error)
+{
+  g_autoptr(GError) close_error = NULL;
+  g_autoptr(GError) release_error = NULL;
+  FpDevice *device = FP_DEVICE (sdcp_device);
+
+  if (fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, mac, error))
+    return;
+
+  /* A failed public open cannot be followed by close. Release everything the
+   * driver's open path acquired so that a retry or another process can claim
+   * the reader. The original SDCP error has already been reported. */
+  if (!g_usb_device_release_interface (fpi_device_get_usb_device (device),
+                                       0, 0, &release_error))
+    fp_warn ("Failed to release interface after SDCP Connect failure: %s",
+             release_error->message);
+  if (!g_usb_device_close (fpi_device_get_usb_device (device), &close_error))
+    fp_warn ("Failed to close USB device after SDCP Connect failure: %s",
+             close_error->message);
+}
+
 /*
  * Validates and uses the SDCP "ConnectResponse" payload to establish a secure
  * device connection which can then be used to generate enrollment IDs and
@@ -1489,7 +1524,7 @@ egismoc_connect_cb (FpDevice *device,
 
   if (error)
     {
-      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL, error);
+      egismoc_connect_complete (sdcp_device, NULL, NULL, NULL, error);
       return;
     }
 
@@ -1499,10 +1534,10 @@ egismoc_connect_cb (FpDevice *device,
                                          rsp_sdcp_connect_success_suffix,
                                          rsp_sdcp_connect_success_suffix_len))
     {
-      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL,
-                                        fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
-                                                                  "Device responded with failure "
-                                                                  "instead of SDCP ConnectResponse"));
+      egismoc_connect_complete (sdcp_device, NULL, NULL, NULL,
+                                fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
+                                                          "Device responded with failure "
+                                                          "instead of SDCP ConnectResponse"));
       return;
     }
 
@@ -1519,10 +1554,10 @@ egismoc_connect_cb (FpDevice *device,
 
   if (length_in < fixed_length)
     {
-      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL,
-                                        fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
-                                                                  "Device SDCP ConnectResponse "
-                                                                  "was not long enough"));
+      egismoc_connect_complete (sdcp_device, NULL, NULL, NULL,
+                                fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
+                                                          "Device SDCP ConnectResponse "
+                                                          "was not long enough"));
       return;
     }
 
@@ -1545,9 +1580,9 @@ egismoc_connect_cb (FpDevice *device,
   /* The untrusted certificate length must leave room for every other field. */
   if (model_certificate_len == 0 || model_certificate_len != length_in - fixed_length)
     {
-      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL,
-                                        fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
-                                                                  "Invalid SDCP certificate length"));
+      egismoc_connect_complete (sdcp_device, NULL, NULL, NULL,
+                                fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
+                                                          "Invalid SDCP certificate length"));
       return;
     }
 
@@ -1580,7 +1615,7 @@ egismoc_connect_cb (FpDevice *device,
   pos += FPI_SDCP_MAC_SIZE;
 
   /* Derive SDCP keys and establish secured connection */
-  fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, mac, error);
+  egismoc_connect_complete (sdcp_device, device_random, claim, mac, error);
 }
 
 static void
@@ -1603,9 +1638,9 @@ egismoc_connect (FpSdcpDevice *sdcp_device)
   fpi_sdcp_device_get_connect_data (sdcp_device, &host_random, &host_public_key);
   if (!host_random || !host_public_key)
     {
-      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL,
-                                        fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                                  "Failed to get SDCP Connect data"));
+      egismoc_connect_complete (sdcp_device, NULL, NULL, NULL,
+                                fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                          "Failed to get SDCP Connect data"));
       return;
     }
 
@@ -1633,9 +1668,9 @@ egismoc_connect (FpSdcpDevice *sdcp_device)
 
   if (!written)
     {
-      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL,
-                                        fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                                  "Failed to write SDCP Connect payload"));
+      egismoc_connect_complete (sdcp_device, NULL, NULL, NULL,
+                                fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                          "Failed to write SDCP Connect payload"));
       return;
     }
 

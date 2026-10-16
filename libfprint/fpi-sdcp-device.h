@@ -171,11 +171,11 @@ void fpi_sdcp_device_open_complete (FpSdcpDevice *self,
 void fpi_sdcp_device_get_connect_data (FpSdcpDevice *self,
                                        GBytes      **host_random,
                                        GBytes      **host_public_key);
-void fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
-                                       GBytes       *device_random,
-                                       FpiSdcpClaim *claim,
-                                       GBytes       *mac,
-                                       GError       *error);
+gboolean fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
+                                           GBytes       *device_random,
+                                           FpiSdcpClaim *claim,
+                                           GBytes       *mac,
+                                           GError       *error);
 
 void fpi_sdcp_device_get_reconnect_data (FpSdcpDevice *self,
                                          GBytes      **reconnect_random);

@@ -42,12 +42,14 @@ def identify_done(dev, res):
     identify_match, identify_print = dev.identify_finish(res)
     print('indentification_done: ', identify_match, identify_print)
     assert identify_match.equal(identify_print)
+    assert identify_print.get_device_stored()
 
 # Beginning with list and clear assumes you begin with >0 prints enrolled before capturing
 
 print("listing - device should have prints")
 stored = d.list_prints_sync()
 assert len(stored) > 0
+assert all(p.get_device_stored() for p in stored)
 del stored
 
 print("clear device storage")
@@ -79,6 +81,7 @@ verify_res, verify_print = d.verify_sync(p1)
 assert d.get_finger_status() == FPrint.FingerStatusFlags.NONE
 print("verify done")
 assert verify_res == True
+assert verify_print.get_device_stored()
 
 identified = False
 deserialized_prints = []

@@ -2,6 +2,7 @@
  * FpSdcpDevice - A base class for SDCP enabled devices
  * Copyright (C) 2020 Benjamin Berg <bberg@redhat.com>
  * Copyright (C) 2025 Joshua Grisham <josh@joshuagrisham.com>
+ * Copyright (C) 2026 Philip Walsh <packages@drphilth.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -432,7 +433,7 @@ fpi_sdcp_device_set_identify_data (FpSdcpDevice *self,
  * agreement, deriving secrets necessary for processing all other SDCP-related
  * payloads, and verifying the device connection is trusted.
  */
-void
+gboolean
 fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
                                   GBytes       *device_random,
                                   FpiSdcpClaim *claim,
@@ -444,10 +445,11 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
 
   g_autoptr(GBytes) application_secret = NULL;
   FpiDeviceAction action;
+  gboolean success;
 
   action = fpi_device_get_current_action (FP_DEVICE (self));
 
-  g_return_if_fail (action == FPI_DEVICE_ACTION_OPEN);
+  g_return_val_if_fail (action == FPI_DEVICE_ACTION_OPEN, FALSE);
 
   if (error)
     goto out;
@@ -497,14 +499,16 @@ out:
   g_clear_pointer (&priv->host_public_key, g_bytes_unref);
   g_clear_pointer (&priv->host_random, g_bytes_unref);
 
+  success = error == NULL;
   fpi_device_open_complete (FP_DEVICE (self), error);
+  return success;
 }
 
 /**
  * fpi_sdcp_device_reconnect_complete:
  * @self: a #FpSdcpDevice fingerprint device
- * @mac: The MAC authenticating @claim
- * @error: A #GError or %NULL on success
+ * @mac: (transfer none) (nullable): The MAC authenticating the reconnect
+ * @error: (transfer full): A #GError or %NULL on success
  *
  * Reports completion of a reconnect (i.e. open) operation.
  */
@@ -520,15 +524,21 @@ fpi_sdcp_device_reconnect_complete (FpSdcpDevice *self,
   action = fpi_device_get_current_action (FP_DEVICE (self));
 
   g_return_if_fail (action == FPI_DEVICE_ACTION_OPEN);
-  g_return_if_fail (priv->reconnect_random);
+  if (!priv->reconnect_random)
+    {
+      /* Random generation can fail before a reconnect message is sent. */
+      if (!error)
+        error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                          "Missing SDCP reconnect random");
+      fpi_device_open_complete (FP_DEVICE (self), error);
+      return;
+    }
 
   if (error)
     {
+      /* The caller retains ownership of the ignored MAC. */
       if (mac)
-        {
-          fp_warn ("Driver provided a reconnect MAC but also reported an error.");
-          g_clear_pointer (&mac, g_bytes_unref);
-        }
+        fp_warn ("Driver provided a reconnect MAC but also reported an error.");
 
       fp_warn ("SDCP Reconnect failed with error: %s. Falling back to full connect.",
                error->message);
@@ -606,6 +616,7 @@ fpi_sdcp_device_list_complete (FpSdcpDevice *self,
   if (error)
     {
       fpi_device_list_complete (FP_DEVICE (self), NULL, error);
+      g_clear_pointer (&ids, g_ptr_array_unref);
       return;
     }
 
@@ -619,7 +630,8 @@ fpi_sdcp_device_list_complete (FpSdcpDevice *self,
     {
       FpPrint *print = fp_print_new (FP_DEVICE (self));
       fpi_print_set_type (print, FPI_PRINT_SDCP);
-      fpi_print_set_device_stored (print, FALSE);
+      /* Every ID returned by list refers to an existing on-device print. */
+      fpi_print_set_device_stored (print, TRUE);
       fpi_print_sdcp_set_id (print, g_ptr_array_index (ids, i));
       g_ptr_array_add (prints, g_object_ref_sink (print));
     }
@@ -798,9 +810,8 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
       return;
     }
 
-  /* No error and no valid id/mac provided means that there was no match from the device */
-  if (!id || !mac || g_bytes_get_size (id) != FPI_SDCP_ENROLLMENT_ID_SIZE ||
-      g_bytes_get_size (mac) != FPI_SDCP_MAC_SIZE)
+  /* Both values absent is the one valid representation of no match. */
+  if (!id && !mac)
     {
       g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
       if (action == FPI_DEVICE_ACTION_VERIFY)
@@ -813,6 +824,16 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
           fpi_device_identify_report (FP_DEVICE (self), NULL, NULL, NULL);
           fpi_device_identify_complete (FP_DEVICE (self), NULL);
         }
+      return;
+    }
+
+  if (!id || !mac || g_bytes_get_size (id) != FPI_SDCP_ENROLLMENT_ID_SIZE ||
+      g_bytes_get_size (mac) != FPI_SDCP_MAC_SIZE)
+    {
+      g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
+      fpi_device_action_error (FP_DEVICE (self),
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                         "Malformed SDCP Identify result"));
       return;
     }
 
@@ -836,8 +857,8 @@ fpi_sdcp_device_identify_complete (FpSdcpDevice *self,
 
   fpi_print_set_type (identified_print, FPI_PRINT_SDCP);
 
-  /* Set to true once committed */
-  fpi_print_set_device_stored (identified_print, FALSE);
+  /* Identification returns an existing on-device enrollment. */
+  fpi_print_set_device_stored (identified_print, TRUE);
 
   /* Attach the ID to the print */
   fpi_print_sdcp_set_id (identified_print, id);

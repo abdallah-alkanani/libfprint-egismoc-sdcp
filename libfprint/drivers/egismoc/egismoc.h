@@ -159,6 +159,8 @@ static guchar cmd_check_prefix_type2[] = {0x50, 0x17, 0x03, 0x80, 0x00};
 static gsize cmd_check_prefix_type2_len = sizeof (cmd_check_prefix_type2) / sizeof (cmd_check_prefix_type2[0]);
 static guchar cmd_check_suffix[] = {0x00, 0x40};
 static gsize cmd_check_suffix_len = sizeof (cmd_check_suffix) / sizeof (cmd_check_suffix[0]);
+static guchar rsp_check_enrolled_suffix[] = {0x90, 0x00};
+static gsize rsp_check_enrolled_suffix_len = sizeof (rsp_check_enrolled_suffix) / sizeof (rsp_check_enrolled_suffix[0]);
 static guchar rsp_check_not_yet_enrolled_suffix[] = {0x90, 0x04};
 static gsize rsp_check_not_yet_enrolled_suffix_len = sizeof (rsp_check_not_yet_enrolled_suffix) / sizeof (rsp_check_not_yet_enrolled_suffix[0]);
 

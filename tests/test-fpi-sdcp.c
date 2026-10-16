@@ -818,11 +818,61 @@ test_reject_identify_replay (void)
   g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
 }
 
+static void
+test_unavailable_provider (gconstpointer user_data)
+{
+  const char *operation = user_data;
+
+  if (g_test_subprocess ())
+    {
+      g_autoptr(GError) error = NULL;
+      g_autoptr(GBytes) secret = g_bytes_from_hex (application_secret_hex);
+      g_autoptr(GBytes) nonce = g_bytes_from_hex (identify_nonce_hex);
+      g_autoptr(GBytes) result = NULL;
+      g_autoptr(GBytes) public_key = NULL;
+
+      g_assert_cmpint (EVP_set_default_properties (NULL, "provider=sdcp_unavailable"), ==, 1);
+      if (g_str_equal (operation, "kdf"))
+        {
+          result = fpi_sdcp_kdf (secret, "test", nonce, NULL, 32, &error);
+        }
+      else if (g_str_equal (operation, "mac"))
+        {
+          result = fpi_sdcp_mac (secret, "test", nonce, NULL, &error);
+        }
+      else if (g_str_equal (operation, "key-agreement"))
+        {
+          g_autoptr(GBytes) private_key = g_bytes_from_hex (host_private_key_hex);
+          g_autoptr(GBytes) peer_key = g_bytes_from_hex (firmware_public_key_hex);
+          result = fpi_sdcp_key_agreement (private_key, peer_key, &error);
+        }
+      else
+        {
+          g_assert_false (fpi_sdcp_generate_host_key (&result, &public_key, &error));
+        }
+
+      g_assert_null (result);
+      g_assert_null (public_key);
+      g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL);
+      return;
+    }
+
+  g_test_trap_subprocess (NULL, 5 * G_TIME_SPAN_SECOND, G_TEST_SUBPROCESS_DEFAULT);
+  g_test_trap_assert_passed ();
+}
+
 int
 main (int argc, char *argv[])
 {
   g_test_init (&argc, &argv, NULL);
   fpi_virtual_sdcp_ca_store_register_resource ();
+
+  const char *operations[] = { "kdf", "mac", "key-agreement", "key-generation" };
+  for (guint i = 0; i < G_N_ELEMENTS (operations); i++)
+    {
+      g_autofree char *path = g_strconcat ("/sdcp/unavailable-provider/", operations[i], NULL);
+      g_test_add_data_func (path, operations[i], test_unavailable_provider);
+    }
 
   g_test_add_func ("/sdcp/generate_host_key", test_generate_host_key);
   g_test_add_func ("/sdcp/generate_random", test_generate_random);

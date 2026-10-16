@@ -170,6 +170,11 @@ dev_identify (FpSdcpDevice *sdcp_device)
   g_autoptr(GBytes) identify_nonce = NULL;
   g_autoptr(GBytes) enrollment_id = NULL;
   g_autoptr(GBytes) identify_mac = NULL;
+  g_autoptr(GBytes) short_id = NULL;
+  g_autoptr(GBytes) short_mac = NULL;
+  GBytes *reported_id;
+  GBytes *reported_mac;
+  const char *malformed_result;
 
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 
@@ -207,7 +212,31 @@ dev_identify (FpSdcpDevice *sdcp_device)
     }
 
   fpi_sdcp_device_set_identify_data (sdcp_device, g_steal_pointer (&identify_nonce));
-  fpi_sdcp_device_identify_complete (sdcp_device, enrollment_id, identify_mac, NULL);
+  reported_id = enrollment_id;
+  reported_mac = identify_mac;
+  malformed_result = g_getenv ("FP_VIRTUAL_SDCP_IDENTIFY_MALFORMED");
+  if (g_strcmp0 (malformed_result, "missing-id") == 0)
+    {
+      reported_id = NULL;
+    }
+  else if (g_strcmp0 (malformed_result, "missing-mac") == 0)
+    {
+      reported_mac = NULL;
+    }
+  else if (g_strcmp0 (malformed_result, "short-id") == 0)
+    {
+      short_id = g_bytes_new_from_bytes (enrollment_id, 0,
+                                         FPI_SDCP_ENROLLMENT_ID_SIZE - 1);
+      reported_id = short_id;
+    }
+  else if (g_strcmp0 (malformed_result, "short-mac") == 0)
+    {
+      short_mac = g_bytes_new_from_bytes (identify_mac, 0,
+                                          FPI_SDCP_MAC_SIZE - 1);
+      reported_mac = short_mac;
+    }
+
+  fpi_sdcp_device_identify_complete (sdcp_device, reported_id, reported_mac, NULL);
 }
 
 static void
@@ -368,6 +397,12 @@ write_event (FpDeviceVirtualSdcp *self, const gchar *event)
 }
 
 static void
+reconnect_mac_released (gpointer data)
+{
+  *((gboolean *) data) = TRUE;
+}
+
+static void
 dev_reconnect (FpSdcpDevice *sdcp_device)
 {
   FpDeviceVirtualSdcp *self = FPI_DEVICE_VIRTUAL_SDCP (sdcp_device);
@@ -397,7 +432,21 @@ dev_reconnect (FpSdcpDevice *sdcp_device)
   reconnect_mac = fpi_sdcp_mac (app_secret, FPI_SDCP_DEFAULT_LABEL_RECONNECT,
                                 random, NULL, &error);
 
-  fpi_sdcp_device_reconnect_complete (sdcp_device, reconnect_mac, error);
+  if (reconnect_mac && g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_RECONNECT_FAILURE"), "with-mac") == 0)
+    {
+      gboolean released = FALSE;
+      GBytes *borrowed = g_bytes_new_with_free_func (g_bytes_get_data (reconnect_mac, NULL),
+                                                     g_bytes_get_size (reconnect_mac),
+                                                     reconnect_mac_released, &released);
+      fpi_sdcp_device_reconnect_complete (sdcp_device, borrowed,
+                                          fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+      g_assert_false (released);
+      g_bytes_unref (borrowed);
+      g_assert_true (released);
+      return;
+    }
+
+  fpi_sdcp_device_reconnect_complete (sdcp_device, reconnect_mac, g_steal_pointer (&error));
 }
 
 static inline gboolean
@@ -620,6 +669,13 @@ static void
 dev_open (FpSdcpDevice *sdcp_device)
 {
   void (*old_reconnect)(FpSdcpDevice *sdcp_device) = dev_reconnect;
+
+  if (g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_RECONNECT_FAILURE"), "before-random") == 0)
+    {
+      fpi_sdcp_device_reconnect_complete (sdcp_device, NULL,
+                                          fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+      return;
+    }
 
   if (g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_CONNECT_FAILURE"), "before-keys") == 0)
     {

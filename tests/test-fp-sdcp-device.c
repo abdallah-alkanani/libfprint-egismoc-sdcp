@@ -80,6 +80,8 @@ sdcp_context_new (void)
 #endif
 }
 
+static FpPrint *make_enroll_template (FpDevice *device);
+
 #ifndef TEST_TOD_DRIVER
 /* These fault hooks are provided by the current virtual driver only. */
 static void
@@ -125,6 +127,38 @@ test_sdcp_device_connect_failure_retry (gconstpointer data)
 
   g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
   g_assert_no_error (error);
+}
+
+static void
+test_sdcp_device_identify_malformed_result (gconstpointer data)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+  g_autoptr(FpPrint) enrolled = NULL;
+  g_autoptr(GPtrArray) gallery = g_ptr_array_new_with_free_func (g_object_unref);
+  g_autoptr(FpPrint) match = NULL;
+
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+  enrolled = fp_device_enroll_sync (tctx->device,
+                                    make_enroll_template (tctx->device),
+                                    NULL, NULL, NULL, &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (enrolled);
+  g_ptr_array_add (gallery, g_object_ref (enrolled));
+
+  g_setenv ("FP_VIRTUAL_SDCP_IDENTIFY_MALFORMED", data, TRUE);
+  g_assert_false (fp_device_identify_sync (tctx->device, gallery, NULL,
+                                           NULL, NULL, &match, NULL, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO);
+  g_assert_null (match);
+  g_unsetenv ("FP_VIRTUAL_SDCP_IDENTIFY_MALFORMED");
+  g_clear_error (&error);
+
+  g_assert_true (fp_device_identify_sync (tctx->device, gallery, NULL,
+                                          NULL, NULL, &match, NULL, &error));
+  g_assert_no_error (error);
+  g_assert_nonnull (match);
 }
 #endif
 
@@ -470,6 +504,7 @@ test_sdcp_device_enroll_list (void)
   g_assert_no_error (error);
   g_assert_nonnull (prints);
   g_assert_cmpuint (prints->len, ==, 1);
+  g_assert_true (fp_print_get_device_stored (g_ptr_array_index (prints, 0)));
   g_assert_true (fp_print_equal (g_ptr_array_index (prints, 0), enrolled));
 }
 
@@ -481,6 +516,7 @@ test_sdcp_device_identify (void)
   g_autoptr(FpPrint) enrolled = NULL;
   g_autoptr(GPtrArray) gallery = NULL;
   g_autoptr(FpPrint) match = NULL;
+  g_autoptr(FpPrint) identified = NULL;
 
   fp_device_open_sync (tctx->device, NULL, &error);
   g_assert_no_error (error);
@@ -495,9 +531,11 @@ test_sdcp_device_identify (void)
   g_ptr_array_add (gallery, g_object_ref (enrolled));
 
   g_assert_true (fp_device_identify_sync (tctx->device, gallery, NULL,
-                                          NULL, NULL, &match, NULL, &error));
+                                          NULL, NULL, &match, &identified, &error));
   g_assert_no_error (error);
   g_assert_nonnull (match);
+  g_assert_nonnull (identified);
+  g_assert_true (fp_print_get_device_stored (identified));
   g_assert_true (fp_print_equal (match, enrolled));
 }
 
@@ -648,6 +686,47 @@ test_sdcp_device_clear_storage (void)
   g_assert_cmpuint (prints_after->len, ==, 0);
 }
 
+#ifndef TEST_TOD_DRIVER
+static void
+test_reconnect_failure_retry (gconstpointer user_data)
+{
+  const char *failure = user_data;
+
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+  g_assert_true (fp_device_close_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+
+  g_setenv ("FP_VIRTUAL_SDCP_RECONNECT_FAILURE", failure, TRUE);
+  if (g_str_equal (failure, "with-mac"))
+    {
+      g_test_expect_message ("libfprint-sdcp_device", G_LOG_LEVEL_WARNING,
+                             "*reconnect MAC*also reported an error*");
+      g_test_expect_message ("libfprint-sdcp_device", G_LOG_LEVEL_WARNING,
+                             "*Reconnect failed with error*Falling back*");
+      g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+      g_assert_no_error (error);
+      g_test_assert_expected_messages ();
+      g_assert_true (fp_device_close_sync (tctx->device, NULL, &error));
+      g_assert_no_error (error);
+    }
+  else
+    {
+      g_assert_false (fp_device_open_sync (tctx->device, NULL, &error));
+      g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL);
+      g_clear_error (&error);
+      g_assert_false (fp_device_is_open (tctx->device));
+    }
+
+  g_unsetenv ("FP_VIRTUAL_SDCP_RECONNECT_FAILURE");
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+}
+#endif
+
 int
 main (int argc, char *argv[])
 {
@@ -707,11 +786,21 @@ main (int argc, char *argv[])
                    test_sdcp_device_clear_storage);
 
 #ifndef TEST_TOD_DRIVER
+  g_test_add_data_func ("/sdcp-device/reconnect/fails/before-random", "before-random", test_reconnect_failure_retry);
+  g_test_add_data_func ("/sdcp-device/reconnect/fails/with-mac", "with-mac", test_reconnect_failure_retry);
   g_test_add_func ("/sdcp-device/enroll/fails/abort_retry", test_sdcp_device_enroll_failure_retry);
   g_test_add_data_func ("/sdcp-device/open/fails/before_keys_retry", "before-keys",
                         test_sdcp_device_connect_failure_retry);
   g_test_add_data_func ("/sdcp-device/open/fails/incomplete_claim_retry", "incomplete-claim",
                         test_sdcp_device_connect_failure_retry);
+  g_test_add_data_func ("/sdcp-device/identify/fails/missing-id", "missing-id",
+                        test_sdcp_device_identify_malformed_result);
+  g_test_add_data_func ("/sdcp-device/identify/fails/missing-mac", "missing-mac",
+                        test_sdcp_device_identify_malformed_result);
+  g_test_add_data_func ("/sdcp-device/identify/fails/short-id", "short-id",
+                        test_sdcp_device_identify_malformed_result);
+  g_test_add_data_func ("/sdcp-device/identify/fails/short-mac", "short-mac",
+                        test_sdcp_device_identify_malformed_result);
 #endif
 
   return g_test_run ();

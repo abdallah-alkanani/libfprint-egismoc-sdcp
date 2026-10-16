@@ -81,3 +81,26 @@ read and reserialized the two existing fprintd records byte-for-byte on
 valid records and reject malformed structures, invalid metadata, and missing
 or wrong-length SDCP IDs. Fresh enrollment, PAM integration, and system
 suspend/resume still require separate validation before installation.
+
+## Additional upstream comparison, 2026-09-20
+
+The identified-print storage flag incorporates Philip Walsh's July 2026
+[Egis ET171 SDCP fix](https://github.com/drphilth/honor-fmbp-libfprint-sdcp/blob/71cff46879eb035acca14f4d3a6246815f35b297/patches/0002-sdcp-mark-identified-print-as-device-stored.patch).
+His [enrollment-status patch](https://github.com/drphilth/honor-fmbp-libfprint-sdcp/blob/71cff46879eb035acca14f4d3a6246815f35b297/patches/0003-egismoc-guard-against-short-interrupt-packets-and-fi.patch)
+also informed the duplicate-check correction: `9000` indicates a duplicate,
+`9004` allows enrollment to proceed, and other statuses fail with a protocol
+error. The community patch permits any non-duplicate status; this port only
+permits the known continuation status. That LGPL-2.1 project packages the
+experimental SDCP implementation; it is not an independent replacement for
+the released TOD core. Its additional device ID was not added here.
+
+Template-list parsing checks the frame prefix, declared payload length,
+complete 32-byte IDs, and response status before replacing cached IDs.
+The public capture's `65fe` empty-list response is accepted only with no IDs.
+Tests exercise six malformed lists, an unknown enrollment-check status, and
+the device-stored flag on listed, identified, and verified prints. Core regressions
+also cover unavailable OpenSSL providers and reconnect failure ownership.
+Clearing an already-empty database returns `DATA_NOT_FOUND` through the
+clear-storage action without calling the delete-print completion path.
+These additional changes have unit and USB replay coverage, but have not
+been retested on the physical reader or through PAM.
