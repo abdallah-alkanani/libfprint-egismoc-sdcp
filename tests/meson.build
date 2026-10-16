@@ -276,6 +276,7 @@ test_util_sources = [
 ]
 
 unit_tests = [
+    'fp-print',
     'fpi-device',
     'fpi-ssm',
     'fpi-assembling',

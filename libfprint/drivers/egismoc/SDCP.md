@@ -74,6 +74,10 @@ reopen between matches. The device's two-template list remained unchanged.
 This does not validate other Egis models. Old non-SDCP recordings are disabled
 explicitly.
 
-The released core uses `FPI_PRINT_SDCP` serialization. Migration from the older
-experimental driver's saved print format, PAM integration, fresh enrollment,
-and system suspend/resume require separate validation before installation.
+The released core preserves the experimental driver's FP3 SDCP on-disk format:
+a nested variant containing a single 32-byte enrollment ID. Both libraries
+read and reserialized the two existing fprintd records byte-for-byte on
+2026-09-20, so those records require no migration. Regression tests preserve
+valid records and reject malformed structures, invalid metadata, and missing
+or wrong-length SDCP IDs. Fresh enrollment, PAM integration, and system
+suspend/resume still require separate validation before installation.

@@ -23,6 +23,7 @@
 #include "fp-print-private.h"
 #include "fpi-compat.h"
 #include "fpi-log.h"
+#include "fpi-sdcp-device.h"
 
 /**
  * SECTION: fp-print
@@ -674,6 +675,8 @@ G_STATIC_ASSERT (sizeof (((struct xyt_struct *) NULL)->xcol[0]) == 4);
  *
  * Serialize a print definition for permanent storage. Note that this is
  * lossy in the sense that e.g. the image data is discarded.
+ * SDCP prints require a 32-byte enrollment ID; incomplete prints are rejected
+ * with %G_IO_ERROR_INVALID_DATA.
  *
  * Returns: (type void): %TRUE on success
  */
@@ -689,6 +692,15 @@ fp_print_serialize (FpPrint *print,
 
   g_assert (data);
   g_assert (length);
+
+  if (print->type == FPI_PRINT_SDCP &&
+      (!print->sdcp_id ||
+       g_bytes_get_size (print->sdcp_id) != FPI_SDCP_ENROLLMENT_ID_SIZE))
+    {
+      g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                   "SDCP print must contain a 32-byte enrollment ID");
+      return FALSE;
+    }
 
   g_variant_builder_add (&builder, "i", print->type);
   g_variant_builder_add (&builder, "s", print->driver);
@@ -792,7 +804,9 @@ fp_print_serialize (FpPrint *print,
  * @length: Length of the data
  * @error: Return location for error
  *
- * Deserialize a print definition from permanent storage.
+ * Deserialize a print definition from permanent storage. Malformed records,
+ * including SDCP records without a 32-byte enrollment ID, are rejected with
+ * %G_IO_ERROR_INVALID_DATA.
  *
  * Returns: (transfer full): A newly created #FpPrint on success
  */
@@ -817,8 +831,8 @@ fp_print_deserialize (const guchar *data,
   const gchar *device_id;
   gboolean device_stored;
 
-  g_assert (data);
-  g_assert (length > 3);
+  if (!data || length <= 3)
+    goto invalid_format;
 
   if (memcmp (data, "FP3", 3) != 0)
     goto invalid_format;
@@ -837,7 +851,7 @@ fp_print_deserialize (const guchar *data,
                                        aligned_data, length - 3,
                                        FALSE, g_free, aligned_data);
 
-  if (!raw_value)
+  if (!g_variant_is_normal_form (raw_value))
     goto invalid_format;
 
 #if (G_BYTE_ORDER == G_BIG_ENDIAN)
@@ -860,14 +874,21 @@ fp_print_deserialize (const guchar *data,
                  &print_data);
 
   finger = finger_int8;
+  if (finger > FP_FINGER_LAST ||
+      (julian_date != G_MININT32 && julian_date <= 0))
+    goto invalid_format;
 
   /* Assume data is valid at this point if the values are somewhat sane. */
   switch (type)
     {
     case FPI_PRINT_NBIS:
       {
-        g_autoptr(GVariant) prints = g_variant_get_child_value (print_data, 0);
+        g_autoptr(GVariant) prints = NULL;
         guint i;
+
+        if (!g_variant_is_of_type (print_data, G_VARIANT_TYPE ("(a(aiaiai))")))
+          goto invalid_format;
+        prints = g_variant_get_child_value (print_data, 0);
 
         result = g_object_new (FP_TYPE_PRINT,
                                "fpi-type", FPI_PRINT_NBIS,
@@ -918,7 +939,11 @@ fp_print_deserialize (const guchar *data,
 
     case FPI_PRINT_RAW:
       {
-        g_autoptr(GVariant) fp_data = g_variant_get_child_value (print_data, 0);
+        g_autoptr(GVariant) fp_data = NULL;
+
+        if (!g_variant_is_of_type (print_data, G_VARIANT_TYPE_VARIANT))
+          goto invalid_format;
+        fp_data = g_variant_get_variant (print_data);
 
         result = g_object_new (FP_TYPE_PRINT,
                                "fpi-type", type,
@@ -933,7 +958,20 @@ fp_print_deserialize (const guchar *data,
 
     case FPI_PRINT_SDCP:
       {
-        g_autoptr(GVariant) fp_data = g_variant_get_child_value (print_data, 0);
+        g_autoptr(GVariant) fp_data = NULL;
+        g_autoptr(GVariant) id_var = NULL;
+        const guint8 *id_data;
+        gsize id_len;
+
+        if (!g_variant_is_of_type (print_data, G_VARIANT_TYPE_VARIANT))
+          goto invalid_format;
+        fp_data = g_variant_get_variant (print_data);
+        if (!g_variant_is_of_type (fp_data, G_VARIANT_TYPE ("(ay)")))
+          goto invalid_format;
+        g_variant_get (fp_data, "(@ay)", &id_var);
+        id_data = g_variant_get_fixed_array (id_var, &id_len, sizeof (guint8));
+        if (id_len != FPI_SDCP_ENROLLMENT_ID_SIZE)
+          goto invalid_format;
 
         result = g_object_new (FP_TYPE_PRINT,
                                "fpi-type", FPI_PRINT_SDCP,
@@ -943,29 +981,17 @@ fp_print_deserialize (const guchar *data,
                                NULL);
         g_object_ref_sink (result);
 
-        if (g_variant_check_format_string (fp_data, "(@ay)", FALSE))
-          {
-            g_autoptr(GVariant) id_var = NULL;
-            const guint8 *id_data;
-            gsize id_len;
-
-            g_variant_get (fp_data, "(@ay)", &id_var);
-            id_data = g_variant_get_fixed_array (id_var, &id_len, sizeof (guint8));
-            result->sdcp_id = g_bytes_new (id_data, id_len);
-          }
+        result->sdcp_id = g_bytes_new (id_data, id_len);
       }
       break;
 
     case FPI_PRINT_UNDEFINED:
-      {
-        g_autofree char *type_str = g_enum_to_string (fpi_print_type_get_type (), type);
-        g_warning ("Invalid print type: 0x%X (%s)", type, type_str);
-
-        goto invalid_format;
-      }
+    default:
+      goto invalid_format;
     }
 
-  date = g_date_new_julian (julian_date);
+  if (julian_date != G_MININT32)
+    date = g_date_new_julian (julian_date);
   g_object_set (result,
                 "finger", finger,
                 "username", username,
