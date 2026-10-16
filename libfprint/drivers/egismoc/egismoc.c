@@ -1513,6 +1513,28 @@ egismoc_identify (FpSdcpDevice *sdcp_device)
   fpi_ssm_start (self->task_ssm, egismoc_task_ssm_done);
 }
 
+/*
+ * A failed public open cannot be followed by close, and libfprint does not
+ * close the USB handle it opened. Release everything the open path acquired
+ * so that a retry or another process can claim the reader.
+ */
+static void
+egismoc_open_failed_cleanup (FpDevice *device,
+                             gboolean  interface_claimed)
+{
+  g_autoptr(GError) close_error = NULL;
+  g_autoptr(GError) release_error = NULL;
+
+  if (interface_claimed &&
+      !g_usb_device_release_interface (fpi_device_get_usb_device (device),
+                                       0, 0, &release_error))
+    fp_warn ("Failed to release interface after failed open: %s",
+             release_error->message);
+  if (!g_usb_device_close (fpi_device_get_usb_device (device), &close_error))
+    fp_warn ("Failed to close USB device after failed open: %s",
+             close_error->message);
+}
+
 static void
 egismoc_connect_complete (FpSdcpDevice *sdcp_device,
                           GBytes       *device_random,
@@ -1520,23 +1542,9 @@ egismoc_connect_complete (FpSdcpDevice *sdcp_device,
                           GBytes       *mac,
                           GError       *error)
 {
-  g_autoptr(GError) close_error = NULL;
-  g_autoptr(GError) release_error = NULL;
-  FpDevice *device = FP_DEVICE (sdcp_device);
-
-  if (fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, mac, error))
-    return;
-
-  /* A failed public open cannot be followed by close. Release everything the
-   * driver's open path acquired so that a retry or another process can claim
-   * the reader. The original SDCP error has already been reported. */
-  if (!g_usb_device_release_interface (fpi_device_get_usb_device (device),
-                                       0, 0, &release_error))
-    fp_warn ("Failed to release interface after SDCP Connect failure: %s",
-             release_error->message);
-  if (!g_usb_device_close (fpi_device_get_usb_device (device), &close_error))
-    fp_warn ("Failed to close USB device after SDCP Connect failure: %s",
-             close_error->message);
+  /* The original SDCP error has already been reported on failure. */
+  if (!fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, mac, error))
+    egismoc_open_failed_cleanup (FP_DEVICE (sdcp_device), TRUE);
 }
 
 /*
@@ -1725,8 +1733,7 @@ egismoc_dev_init_done (FpiSsm   *ssm,
 
   if (error)
     {
-      g_usb_device_release_interface (
-        fpi_device_get_usb_device (device), 0, 0, NULL);
+      egismoc_open_failed_cleanup (device, TRUE);
       egismoc_task_ssm_done (ssm, device, error);
       return;
     }
@@ -1870,15 +1877,11 @@ egismoc_open (FpSdcpDevice *sdcp_device)
   g_clear_object (&self->interrupt_cancellable);
   self->interrupt_cancellable = g_cancellable_new ();
 
-  if (!g_usb_device_reset (fpi_device_get_usb_device (device), &error))
-    {
-      fpi_sdcp_device_open_complete (sdcp_device, error);
-      return;
-    }
-
-  if (!g_usb_device_claim_interface (fpi_device_get_usb_device (device),
+  if (!g_usb_device_reset (fpi_device_get_usb_device (device), &error) ||
+      !g_usb_device_claim_interface (fpi_device_get_usb_device (device),
                                      0, 0, &error))
     {
+      egismoc_open_failed_cleanup (device, FALSE);
       fpi_sdcp_device_open_complete (sdcp_device, error);
       return;
     }

@@ -23,6 +23,7 @@ def mutate_response(capture, case):
     pending_commit = False
     pending_list = False
     pending_check = False
+    pending_firmware = False
     changed = False
     while position < len(capture):
         kind, length = struct.unpack_from('<II', capture, position)
@@ -37,11 +38,17 @@ def mutate_response(capture, case):
                 pending_list = True
             if data.startswith(b'EGIS') and data[14:17] == bytes.fromhex('501703'):
                 pending_check = True
+            if data.startswith(b'EGIS') and data[14:16] == bytes.fromhex('507f'):
+                pending_firmware = True
             if not changed and data.startswith(b'SIGE'):
                 selected = False
                 if case == 'commit-rejected' and pending_commit:
                     assert data[-2:] == bytes.fromhex('9000')
                     data[-2:] = bytes.fromhex('9004')
+                    selected = True
+                elif case == 'init-retry' and pending_firmware:
+                    assert data[-2:] == bytes.fromhex('9000')
+                    data[-2:] = bytes.fromhex('6f00')
                     selected = True
                 elif case == 'enroll-check-status' and pending_check:
                     assert data[-2:] == bytes.fromhex('9004')
@@ -116,6 +123,32 @@ def duplicate_connect_exchange(capture):
     raise AssertionError('Connect exchange not found')
 
 
+def duplicate_init_exchange(capture):
+    """Insert a second vendor init and firmware-version exchange for an open retry."""
+    position = 0
+    exchange_start = None
+    firmware_requested = False
+    while position < len(capture):
+        kind, length = struct.unpack_from('<II', capture, position)
+        block = capture[position:position + length]
+        if kind == 6:
+            size = struct.unpack_from('<I', block, 20)[0]
+            packet = block[28:28 + size]
+            data = packet[64:]
+            # First vendor device-to-host control request (DEV_INIT_CONTROL1).
+            if exchange_start is None and packet[8:10] == b'S\x02' and packet[40] == 0xc0:
+                exchange_start = position
+            if data.startswith(b'EGIS') and data[14:16] == bytes.fromhex('507f'):
+                firmware_requested = True
+            elif firmware_requested and data.startswith(b'SIGE'):
+                exchange_end = position + length
+                return (capture[:exchange_end] +
+                        capture[exchange_start:exchange_end] +
+                        capture[exchange_end:])
+        position += length
+    raise AssertionError('Init exchange not found')
+
+
 def main():
     source = Path(__file__).resolve().parent
     capture = bytearray((source / "egismoc/custom.pcapng").read_bytes())
@@ -129,6 +162,8 @@ def main():
     if case == "connect-retry":
         capture = duplicate_connect_exchange(capture)
         capture[offset:offset + 2] = bytes(2)
+    elif case == "init-retry":
+        capture = mutate_response(duplicate_init_exchange(capture), case)
     elif case.startswith('list-') or case in ("commit-rejected", "identify-short", "connect-short", "enroll-check-status"):
         capture = mutate_response(capture, case)
     elif case in ("clear-empty", "delete-legacy"):
@@ -164,7 +199,30 @@ def main():
         directory = Path(temp)
         shutil.copyfile(source / "egismoc/device", directory / "device")
         (directory / "custom.pcapng").write_bytes(capture)
-        if case == "connect-retry":
+        if case == "init-retry":
+            script = '''\
+import gi
+gi.require_version('FPrint', '2.0')
+from gi.repository import FPrint, GLib
+context = FPrint.Context()
+devices = context.get_devices()
+assert len(devices) == 1
+device = devices[0]
+try:
+    device.open_sync()
+except GLib.Error as error:
+    assert error.matches(FPrint.DeviceError.quark(), FPrint.DeviceError.PROTO), error
+    assert 'firmware' in error.message, error
+else:
+    raise AssertionError('Invalid firmware-version response was accepted')
+assert not device.is_open()
+device.open_sync()
+assert device.is_open()
+device.close_sync()
+assert not device.is_open()
+print('Failed device init released USB resources and retry succeeded')
+'''
+        elif case == "connect-retry":
             script = '''\
 import gi
 gi.require_version('FPrint', '2.0')

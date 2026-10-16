@@ -232,7 +232,7 @@ if get_option('introspection')
     endforeach
 
     if 'egismoc' in supported_drivers
-        foreach malformed_case : ['empty', 'oversized', 'overlap', 'stale-identify', 'commit-rejected', 'identify-short', 'connect-short', 'list-short', 'list-partial', 'list-status', 'list-header', 'list-empty-status', 'list-length', 'enroll-check-status', 'clear-empty', 'delete-legacy', 'connect-retry']
+        foreach malformed_case : ['empty', 'oversized', 'overlap', 'stale-identify', 'commit-rejected', 'identify-short', 'connect-short', 'list-short', 'list-partial', 'list-status', 'list-header', 'list-empty-status', 'list-length', 'enroll-check-status', 'clear-empty', 'delete-legacy', 'init-retry', 'connect-retry']
             malformed_env = envs
             malformed_env.set('FP_DRIVERS_ALLOWLIST', 'egismoc')
             test('egismoc-sdcp-' + malformed_case, python3,
