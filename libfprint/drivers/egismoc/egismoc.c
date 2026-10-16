@@ -2035,8 +2035,9 @@ fpi_device_egismoc_class_init (FpiDeviceEgisMocClass *klass)
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->id_table = egismoc_id_table;
   dev_class->nr_enroll_stages = EGISMOC_MAX_ENROLL_STAGES_DEFAULT;
-  /* device should be "always off" unless being used */
-  dev_class->temp_hot_seconds = 0;
+  /* Match-on-chip sensor without a heat limit; 0 would select the default
+   * 3-minute temperature model. */
+  dev_class->temp_hot_seconds = -1;
 
   sdcp_dev_class->open = egismoc_open;
   sdcp_dev_class->connect = egismoc_connect;
