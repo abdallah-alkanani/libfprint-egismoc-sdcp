@@ -318,13 +318,10 @@ fpi_sdcp_device_open_complete (FpSdcpDevice *self,
   if (cls->reconnect && application_secret)
     fpi_sdcp_device_reconnect (self);
 
-  /* Connect if we don't already have an application_secret */
-  else if (!application_secret)
-    fpi_sdcp_device_connect (self);
-
-  /* Complete open if we are already connected */
+  /* Otherwise connect. A device must not keep its master secret across power
+   * loss, so an old secret is only reused once Reconnect proves it. */
   else
-    fpi_device_open_complete (FP_DEVICE (self), error);
+    fpi_sdcp_device_connect (self);
 }
 
 /**

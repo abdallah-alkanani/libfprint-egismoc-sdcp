@@ -372,23 +372,44 @@ test_sdcp_device_reconnect_deterministic (void)
 static void
 test_sdcp_device_reconnect_not_supported (void)
 {
-  g_autoptr(FptContext) tctx = sdcp_context_new ();
   g_autoptr(GError) error = NULL;
+  g_autofree char *tmpdir = g_dir_make_tmp ("sdcp-events-XXXXXX", &error);
+  g_autofree char *socket_path = NULL;
+  g_autoptr(GSocket) sock = NULL;
+  g_autofree char *events = NULL;
+  g_autoptr(FptContext) tctx = NULL;
+
+  g_assert_no_error (error);
+  socket_path = g_build_filename (tmpdir, "events.sock", NULL);
 
   g_setenv ("FP_VIRTUAL_SDCP_NO_RECONNECT", "1", TRUE);
+  g_setenv ("FP_VIRTUAL_SDCP_EVENTS_SOCKET", socket_path, TRUE);
+
+  tctx = sdcp_context_new ();
+  sock = connect_events_socket (socket_path);
 
   g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
   g_assert_no_error (error);
+  events = read_events (sock);
+  g_assert_cmpstr (events, ==, "connect\n");
 
   fp_device_close_sync (tctx->device, NULL, &error);
   g_assert_no_error (error);
 
-  /* Second open falls back to a full connect since the driver has no reconnect. */
+  /* Second open falls back to a full connect since the driver has no
+   * reconnect; without it the host cannot prove the device kept its secret. */
   g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
   g_assert_no_error (error);
   g_assert_true (fp_device_is_open (tctx->device));
+  g_clear_pointer (&events, g_free);
+  events = read_events (sock);
+  g_assert_cmpstr (events, ==, "connect\n");
 
   g_unsetenv ("FP_VIRTUAL_SDCP_NO_RECONNECT");
+  g_unsetenv ("FP_VIRTUAL_SDCP_EVENTS_SOCKET");
+
+  g_unlink (socket_path);
+  g_rmdir (tmpdir);
 }
 
 static void
