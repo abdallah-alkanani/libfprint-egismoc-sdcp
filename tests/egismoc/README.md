@@ -33,6 +33,10 @@ The TOD virtual driver retains its independently generated upstream fixtures.
 lengths, truncated connect/identify responses, a rejected enrollment commit,
 and a response MAC belonging to the original zero nonce. Truncation updates
 pcapng and USB lengths. Rejection tests also check that the device can close.
+The retry cases duplicate the vendor init or Connect exchange so that a second
+open can succeed after the first one fails. `delete-legacy` deletes an invalid
+record and then a print in the pre-SDCP RAW format; it reuses the recorded
+delete exchange, so the replay also checks that the right template ID is sent.
 Tests run inside umockdev and never touch real enrollment storage.
 
 The cancellation/suspend tests share this recording via symlinks. Their

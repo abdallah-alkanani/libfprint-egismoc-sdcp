@@ -59,6 +59,26 @@ not reported to callers as authenticated identification results.
   libfprint action. Enrollment aborts reset the sensor before completion.
 - Suspend returns `FP_DEVICE_ERROR_NOT_SUPPORTED`, allowing libfprint to cancel
   and drain the operation. It does not pretend that a capture survives suspend.
+- The driver has no SDCP Reconnect command, so every open performs a full
+  Connect. The specification forbids keeping the master secret across power
+  loss, and only Reconnect can prove that a cached secret is still shared.
+- Every failed open releases the interface and closes the USB handle, so the
+  reader can be opened again by the same process.
+
+## Existing enrollments
+
+Prints enrolled with the pre-SDCP `egismoc` driver are stored by fprintd as
+RAW prints. Identification returns SDCP prints, so those records never match
+and must be re-enrolled. Their data is the same 32-byte device template ID,
+so delete still accepts them: removing the old fingerprints and enrolling
+again cleans up both fprintd's records and the sensor.
+
+The sensor keeps a single template store. Templates enrolled by another
+operating system, such as Windows Hello on a dual-boot machine, are listed
+as device prints. When enrollment starts, fprintd deletes a device print it
+has no record of if the scanned finger matches it, and it deletes unknown
+prints when storage is full. Enrolling on Linux can therefore remove
+Windows enrollments.
 
 ## Validation and compatibility
 
@@ -74,13 +94,25 @@ reopen between matches. The device's two-template list remained unchanged.
 This does not validate other Egis models. Old non-SDCP recordings are disabled
 explicitly.
 
+From 2026-09-21 to 2026-10-16 the build of the first five patches served
+597 successful fingerprint logins on that `1c7a:05a1` through `pam_fprintd`
+(GDM, polkit and sudo), with no fprintd crash. Four identifies were cancelled
+by system suspend, and later logins after resume succeeded.
+
+On 2026-10-16 the full branch, built with `-Ddrivers=egismoc` and used by
+fprintd, passed on the same reader: enrolling a new finger (an enrolled finger
+was rejected as a duplicate), verifying all three fingers, no-match for the
+wrong finger, deleting only the new template (confirmed by listing the
+reader), verifying right after a verify was cancelled while waiting for a
+finger, and repeated reopens with a fresh Connect in one fprintd process.
+Failed opens and deleting pre-SDCP records have replay coverage only.
+
 The released core preserves the experimental driver's FP3 SDCP on-disk format:
 a nested variant containing a single 32-byte enrollment ID. Both libraries
 read and reserialized the two existing fprintd records byte-for-byte on
 2026-09-20, so those records require no migration. Regression tests preserve
 valid records and reject malformed structures, invalid metadata, and missing
-or wrong-length SDCP IDs. Fresh enrollment, PAM integration, and system
-suspend/resume still require separate validation before installation.
+or wrong-length SDCP IDs.
 
 ## Additional upstream comparison, 2026-09-20
 
@@ -102,5 +134,5 @@ the device-stored flag on listed, identified, and verified prints. Core regressi
 also cover unavailable OpenSSL providers and reconnect failure ownership.
 Clearing an already-empty database returns `DATA_NOT_FOUND` through the
 clear-storage action without calling the delete-print completion path.
-These additional changes have unit and USB replay coverage, but have not
-been retested on the physical reader or through PAM.
+These changes are part of the build used daily since 2026-09-21 and of the
+2026-10-16 hardware checks above.
