@@ -55,10 +55,12 @@ drivers_tests = [
     'nb1010',
     'egis0570',
     'egismoc',
+    'egismoc-cancel',
+    'egismoc-suspend',
     'egis_etu905',
-    'egismoc-05a1',
-    'egismoc-0586',
-    'egismoc-0587',
+    # 'egismoc-05a1', # needs an SDCP capture
+    # 'egismoc-0586', # needs an SDCP capture
+    # 'egismoc-0587', # needs an SDCP capture
     'fpcmoc',
 	'realtek',
 	'realtek-5816',
@@ -228,6 +230,20 @@ if get_option('introspection')
             )
         endif
     endforeach
+
+    if 'egismoc' in supported_drivers
+        foreach malformed_case : ['empty', 'oversized', 'overlap', 'stale-identify', 'commit-rejected', 'identify-short', 'connect-short']
+            malformed_env = envs
+            malformed_env.set('FP_DRIVERS_ALLOWLIST', 'egismoc')
+            test('egismoc-sdcp-' + malformed_case, python3,
+                args: [files('egismoc-sdcp-malformed.py'), malformed_case],
+                env: malformed_env,
+                suite: ['drivers'],
+                timeout: 30,
+                depends: libfprint_typelib,
+            )
+        endforeach
+    endif
 
     if  installed_tests and driver_tests_enabled
         install_data(umockdev_test.full_path(),
