@@ -238,7 +238,14 @@ fpi_sdcp_device_enroll (FpSdcpDevice *self)
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
   application_secret = fpi_sdcp_device_get_application_secret (self);
-  g_return_if_fail (application_secret != NULL);
+  if (!application_secret)
+    {
+      /* "sdcp-data" is a public property; fail instead of never completing. */
+      fpi_device_action_error (FP_DEVICE (self),
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                         "No SDCP session"));
+      return;
+    }
 
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
 
@@ -263,7 +270,13 @@ fpi_sdcp_device_identify (FpSdcpDevice *self)
   action = fpi_device_get_current_action (FP_DEVICE (self));
   g_return_if_fail (action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_VERIFY);
   application_secret = fpi_sdcp_device_get_application_secret (self);
-  g_return_if_fail (application_secret != NULL);
+  if (!application_secret)
+    {
+      fpi_device_action_error (FP_DEVICE (self),
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                         "No SDCP session"));
+      return;
+    }
 
   g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
 

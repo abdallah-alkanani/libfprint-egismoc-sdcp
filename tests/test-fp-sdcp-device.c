@@ -561,6 +561,44 @@ test_sdcp_device_identify (void)
 }
 
 static void
+test_sdcp_device_no_session (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+  g_autoptr(FpPrint) enrolled = NULL;
+  g_autoptr(FpPrint) failed = NULL;
+  g_autoptr(GPtrArray) gallery = NULL;
+
+  fp_device_open_sync (tctx->device, NULL, &error);
+  g_assert_no_error (error);
+
+  enrolled = fp_device_enroll_sync (tctx->device,
+                                    make_enroll_template (tctx->device),
+                                    NULL, NULL, NULL, &error);
+  g_assert_no_error (error);
+  gallery = g_ptr_array_new_with_free_func (g_object_unref);
+  g_ptr_array_add (gallery, g_object_ref (enrolled));
+
+  /* "sdcp-data" is public and writable; operations must fail, not hang. */
+  g_object_set (tctx->device, "sdcp-data", NULL, NULL);
+
+  g_assert_false (fp_device_identify_sync (tctx->device, gallery, NULL,
+                                           NULL, NULL, NULL, NULL, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL);
+  g_clear_error (&error);
+
+  failed = fp_device_enroll_sync (tctx->device,
+                                  make_enroll_template (tctx->device),
+                                  NULL, NULL, NULL, &error);
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL);
+  g_assert_null (failed);
+  g_clear_error (&error);
+
+  g_assert_true (fp_device_close_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+}
+
+static void
 test_sdcp_device_identify_no_prints (void)
 {
   g_autoptr(FptContext) tctx = sdcp_context_new ();
@@ -797,6 +835,8 @@ main (int argc, char *argv[])
                    test_sdcp_device_enroll_list);
   g_test_add_func ("/sdcp-device/enroll/fails/wrong_label",
                    test_sdcp_device_enroll_fails_wrong_label);
+  g_test_add_func ("/sdcp-device/no-session",
+                   test_sdcp_device_no_session);
   g_test_add_func ("/sdcp-device/identify",
                    test_sdcp_device_identify);
   g_test_add_func ("/sdcp-device/identify/no_prints",
