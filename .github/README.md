@@ -40,7 +40,7 @@ sudo apt install meson ninja-build build-essential && sudo apt build-dep libfpri
 Then build only this driver:
 
 ```sh
-git clone -b egismoc-sdcp <this repository> libfprint-egismoc-sdcp
+git clone https://github.com/abdallah-alkanani/libfprint-egismoc-sdcp.git
 cd libfprint-egismoc-sdcp
 meson setup build -Ddrivers=egismoc -Dtod=false -Ddoc=false \
   -Dgtk-examples=false -Dintrospection=false -Dinstalled-tests=false
