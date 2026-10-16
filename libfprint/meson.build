@@ -213,9 +213,8 @@ if 'sdcp' in driver_helpers or get_option('tod')
     ]
 
     if not get_option('tod')
-        libfprint_private_sources += [
-            sdcp_ca_store_resource[0],
-        ]
+        # Both the source and the header, so fpi-sdcp.c waits for the header.
+        libfprint_private_sources += sdcp_ca_store_resource
     endif
 endif
 
