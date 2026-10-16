@@ -107,6 +107,14 @@ reader), verifying right after a verify was cancelled while waiting for a
 finger, and repeated reopens with a fresh Connect in one fprintd process.
 Failed opens and deleting pre-SDCP records have replay coverage only.
 
+Also on 2026-10-16, fusuma reported the branch working on `1c7a:0584`
+(type-1 check prefix, 20 stages) in libfprint #889: enrollment, prints kept
+across fprintd restarts, delete, 5/5 matches, 5/5 wrong-finger rejections,
+and PAM. An enrollment following one that timed out accepted a wrong finger
+4 times in 6; a clean re-enrollment rejected it. The driver does not send the
+enrollment discard command (`50 16 04`) that `egis_etu905` sends when an
+enrollment is cancelled; whether aborted captures carry over is untested.
+
 The released core preserves the experimental driver's FP3 SDCP on-disk format:
 a nested variant containing a single 32-byte enrollment ID. Both libraries
 read and reserialized the two existing fprintd records byte-for-byte on

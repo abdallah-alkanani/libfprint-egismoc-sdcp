@@ -18,7 +18,7 @@ driver's protocol mapping and trust rules.
 
 | | |
 | --- | --- |
-| Tested with this branch | `1c7a:05a1` |
+| Tested with this branch | `1c7a:05a1`; `1c7a:0584` by fusuma |
 | Daily use | 597 fingerprint logins through `pam_fprintd` (GDM, polkit, sudo) from 2026-09-21 to 2026-10-16 with the build of the first five commits, including suspend during identify |
 | This branch on hardware | Enroll, duplicate rejection, verify, wrong-finger no-match, delete, verify after a cancelled verify, and repeated reopen, all through fprintd on 2026-10-16 |
 | Automated tests | 73 native and 114 TOD-enabled test jobs; unit suites and 21 USB replays also under ASan and UBSan |
@@ -29,10 +29,11 @@ driver's protocol mapping and trust rules.
 | USB ID | Found in | Status |
 | --- | --- | --- |
 | `1c7a:05a1` | Samsung Galaxy Book (ETU905A80-E) | Tested with this branch |
+| `1c7a:0584` | Acer Swift SF16-51 (ETU905A88-E) | Enroll, verify, delete and PAM tested with this branch by [fusuma][fusuma] |
 | `1c7a:05aa` | HONOR MagicBook Pro 14 2025 (ET171) | Enroll, verify, PAM and suspend tested by [Philip Walsh][honor] with his MR !547 build; his patch is included |
 | `1c7a:05b1` | Fujitsu (ETU906Axx-E) | Open, enroll and verify reported in [MR !671][mr671] with the MR !547 driver |
 | `1c7a:05a5` | Samsung Galaxy Book4/Book5 | Reported working with MR !547 builds by [Roman2K][roman2k]; his longer finger wait is included |
-| `1c7a:0582`, `0583`, `0584`, `0586`, `0587`, `0588` | Various | Listed by MR !547; not tested with this branch |
+| `1c7a:0582`, `0583`, `0586`, `0587`, `0588` | Various | Listed by MR !547; not tested with this branch |
 
 Find your reader's ID with `lsusb | grep 1c7a`. Reports from any of these
 models are welcome, working or not.
@@ -105,6 +106,14 @@ The reader has one template store. On a dual-boot machine, fprintd can delete
 Windows Hello templates it does not know about: when enrollment starts and
 the finger matches one, or when the reader is full.
 
+### If a wrong finger matches
+
+The reader, not the host, decides whether a finger matches. An enrollment
+with sloppy or interrupted touches can give a weak template that accepts
+other fingers. Delete that finger and enroll it again in one go, touching
+with the same finger each time. The reader stops waiting after 30 to 60
+seconds without a touch, which ends the enrollment.
+
 ### Roll back
 
 ```sh
@@ -159,3 +168,4 @@ temperature-model fix.
 [honor]: https://github.com/drphilth/honor-fmbp-libfprint-sdcp
 [mr671]: https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/671
 [roman2k]: https://github.com/Roman2K/samsung-galaxybook-libfprint
+[fusuma]: https://gitlab.freedesktop.org/libfprint/libfprint/-/issues/889
