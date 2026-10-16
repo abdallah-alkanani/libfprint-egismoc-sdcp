@@ -550,15 +550,50 @@ egismoc_list (FpSdcpDevice *sdcp_device)
   fpi_ssm_start (self->task_ssm, egismoc_task_ssm_done);
 }
 
+/*
+ * Returns the 32-byte device template ID of a print. Records written by the
+ * pre-SDCP egismoc driver are RAW prints holding the same ID as "(ay)"; they
+ * cannot be identified over SDCP, but must remain deletable.
+ */
+static GBytes *
+egismoc_get_print_id (FpPrint *print)
+{
+  g_autoptr(GBytes) sdcp_id = NULL;
+  g_autoptr(GVariant) data = NULL;
+  g_autoptr(GVariant) id_var = NULL;
+  FpiPrintType type;
+  const guint8 *id;
+  gsize id_len;
+
+  g_object_get (print, "fpi-type", &type, "fpi-data", &data, NULL);
+  if (type == FPI_PRINT_SDCP)
+    {
+      sdcp_id = fpi_print_sdcp_get_id (print);
+      if (!sdcp_id || g_bytes_get_size (sdcp_id) != FPI_SDCP_ENROLLMENT_ID_SIZE)
+        return NULL;
+      return g_steal_pointer (&sdcp_id);
+    }
+
+  if (type != FPI_PRINT_RAW || !data ||
+      !g_variant_is_of_type (data, G_VARIANT_TYPE ("(ay)")))
+    return NULL;
+
+  g_variant_get (data, "(@ay)", &id_var);
+  id = g_variant_get_fixed_array (id_var, &id_len, sizeof (guint8));
+  if (id_len != FPI_SDCP_ENROLLMENT_ID_SIZE)
+    return NULL;
+
+  return g_bytes_new (id, id_len);
+}
+
 static guchar *
 egismoc_get_delete_cmd (FpDevice *device,
-                        FpPrint  *delete_print,
+                        GBytes   *enrollment_id,
                         gsize    *length_out)
 {
   fp_dbg ("Get delete command");
   FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
   g_auto(FpiByteWriter) writer = {0};
-  g_autoptr(GBytes) enrollment_id = NULL;
   g_autofree guchar *result = NULL;
   gboolean written = TRUE;
 
@@ -577,7 +612,7 @@ egismoc_get_delete_cmd (FpDevice *device,
    */
 
   int num_to_delete = 0;
-  if (delete_print)
+  if (enrollment_id)
     num_to_delete = 1;
   else if (self->enrolled_ids)
     num_to_delete = self->enrolled_ids->len;
@@ -628,18 +663,9 @@ egismoc_get_delete_cmd (FpDevice *device,
 
   /* append desired enrollment_id(s) */
 
-  /* if passed a delete_print then fetch its ID from the FpPrint */
-  if (delete_print)
+  /* if passed an enrollment_id then delete only that print */
+  if (enrollment_id)
     {
-      enrollment_id = fpi_print_sdcp_get_id (delete_print);
-      if (!enrollment_id)
-        {
-          fpi_ssm_mark_failed (self->task_ssm,
-                               fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
-                                                         "Print data missing ID"));
-          return NULL;
-        }
-
       fp_dbg ("Delete enrollment ID:");
       fp_dbg_hex_dump_gbytes (enrollment_id);
 
@@ -774,15 +800,25 @@ egismoc_delete (FpDevice *device)
   fp_dbg ("Delete");
   FpiDeviceEgisMoc *self = FPI_DEVICE_EGISMOC (device);
   FpPrint *delete_print = NULL;
+  GBytes *enrollment_id;
 
   fpi_device_get_delete_data (device, &delete_print);
+
+  /* Reject unusable print data before sending any device command. */
+  enrollment_id = egismoc_get_print_id (delete_print);
+  if (!enrollment_id)
+    {
+      fpi_device_delete_complete (device,
+                                  fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
+                                                            "Print data missing ID"));
+      return;
+    }
 
   g_assert (self->task_ssm == NULL);
   self->task_ssm = fpi_ssm_new (device,
                                 egismoc_delete_run_state,
                                 DELETE_STATES);
-  /* the print is owned by libfprint during deletion task */
-  fpi_ssm_set_data (self->task_ssm, delete_print, NULL);
+  fpi_ssm_set_data (self->task_ssm, enrollment_id, (GDestroyNotify) g_bytes_unref);
   fpi_ssm_start (self->task_ssm, egismoc_task_ssm_done);
 }
 

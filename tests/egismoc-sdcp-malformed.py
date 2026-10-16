@@ -131,7 +131,7 @@ def main():
         capture[offset:offset + 2] = bytes(2)
     elif case.startswith('list-') or case in ("commit-rejected", "identify-short", "connect-short", "enroll-check-status"):
         capture = mutate_response(capture, case)
-    elif case == "clear-empty":
+    elif case in ("clear-empty", "delete-legacy"):
         pass
     elif case == "stale-identify":
         # Restore the first Identify response's valid *zero-nonce* MAC from
@@ -215,6 +215,40 @@ sys.exit(0)
 '''
             assert script.count(needle) == 2
             script = script.replace(needle, replacement, 1)
+        elif case == "delete-legacy":
+            script = (source / "egismoc/custom.py").read_text()
+            needle = '''\
+print("deleting first print")
+d.delete_print_sync(p1)
+'''
+            replacement = '''\
+def raw_record(sdcp_print, id_length):
+    """Rewrite an SDCP record in the pre-SDCP driver's RAW "(ay)" format."""
+    record = GLib.Variant.new_from_bytes(GLib.VariantType('(issbymsmsia{sv}v)'),
+                                         GLib.Bytes(sdcp_print.serialize()[3:]), False)
+    assert record.get_child_value(0).get_int32() == 3
+    template_id = record.get_child_value(9).get_variant().get_variant()
+    template_id = bytes(template_id.get_child_value(0).unpack())
+    assert len(template_id) == 32
+    raw = GLib.Variant('(issbymsmsia{sv}v)', (
+        1, 'egismoc', sdcp_print.get_device_id(), True, int(sdcp_print.get_finger()),
+        None, None, -2**31, {},
+        GLib.Variant('v', GLib.Variant('(ay)', (template_id[:id_length],)))))
+    return FPrint.Print.deserialize(b'FP3' + raw.get_data_as_bytes().get_data())
+
+print("deleting a print without a usable template ID")
+try:
+    d.delete_print_sync(raw_record(p1, 31))
+except GLib.Error as error:
+    assert error.matches(FPrint.DeviceError.quark(), FPrint.DeviceError.DATA_INVALID), error
+else:
+    raise AssertionError('Print without a template ID was accepted')
+
+print("deleting first print through its pre-SDCP record")
+d.delete_print_sync(raw_record(p1, 32))
+'''
+            assert script.count(needle) == 1
+            script = script.replace(needle, replacement)
         elif case.startswith('list-'):
             script = '''\
 import gi
