@@ -27,7 +27,7 @@
 
 #include <config.h>
 
-#ifdef HAVE_LIBFPRINT_TOD
+#if HAVE_LIBFPRINT_TOD
 #include "tod/tod-shared-loader.h"
 #endif
 
@@ -300,7 +300,9 @@ fp_context_finalize (GObject *object)
     g_object_run_dispose (G_OBJECT (priv->usb_ctx));
   g_clear_object (&priv->usb_ctx);
 
+#if HAVE_LIBFPRINT_TOD
   tod_shared_drivers_unregister ();
+#endif
 
   G_OBJECT_CLASS (fp_context_parent_class)->finalize (object);
 }
@@ -357,7 +359,6 @@ static void
 fp_context_init (FpContext *self)
 {
   g_autoptr(GError) error = NULL;
-  g_autoptr(GArray) shared_drivers = NULL;
   FpContextPrivate *priv = fp_context_get_instance_private (self);
   guint i;
 
@@ -365,9 +366,15 @@ fp_context_init (FpContext *self)
 
   priv->drivers = fpi_get_driver_types ();
 
-  tod_shared_drivers_register ();
-  shared_drivers = tod_shared_drivers_get ();
-  g_array_prepend_vals (priv->drivers, shared_drivers->data, shared_drivers->len);
+#if HAVE_LIBFPRINT_TOD
+  {
+    g_autoptr(GArray) shared_drivers = NULL;
+
+    tod_shared_drivers_register ();
+    shared_drivers = tod_shared_drivers_get ();
+    g_array_prepend_vals (priv->drivers, shared_drivers->data, shared_drivers->len);
+  }
+#endif
 
   if (get_drivers_allowlist_env ())
     {
