@@ -139,6 +139,8 @@ fpi_sdcp_device_connect (FpSdcpDevice *self)
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
   FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
+  g_object_set (self, "sdcp-data", NULL, NULL);
+
   g_clear_pointer (&priv->host_private_key, g_bytes_unref);
   g_clear_pointer (&priv->host_public_key, g_bytes_unref);
   g_clear_pointer (&priv->host_random, g_bytes_unref);
@@ -227,6 +229,7 @@ void
 fpi_sdcp_device_enroll (FpSdcpDevice *self)
 {
   FpSdcpDeviceClass *cls = FP_SDCP_DEVICE_GET_CLASS (self);
+  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
 
   g_autoptr(GBytes) application_secret = NULL;
   FpPrint *print;
@@ -241,6 +244,7 @@ fpi_sdcp_device_enroll (FpSdcpDevice *self)
   fpi_print_set_device_stored (print, FALSE);
   g_object_set (print, "fpi-data", NULL, NULL);
 
+  g_clear_error (&priv->enroll_error);
   cls->enroll (self);
 }
 
@@ -419,10 +423,10 @@ fpi_sdcp_device_set_identify_data (FpSdcpDevice *self,
 /**
  * fpi_sdcp_device_connect_complete:
  * @self: a #FpSdcpDevice fingerprint device
- * @device_random: The device random
- * @claim: The device #FpiSdcpClaim
- * @mac: The MAC authenticating @claim
- * @error: A #GError or %NULL on success
+ * @device_random: (transfer none): The device random
+ * @claim: (transfer none): The device #FpiSdcpClaim
+ * @mac: (transfer none): The MAC authenticating @claim
+ * @error: (transfer full): A #GError or %NULL on success
  *
  * Reports completion of connect operation. Responsible for performing SDCP key
  * agreement, deriving secrets necessary for processing all other SDCP-related
@@ -444,37 +448,18 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
   action = fpi_device_get_current_action (FP_DEVICE (self));
 
   g_return_if_fail (action == FPI_DEVICE_ACTION_OPEN);
-  g_return_if_fail (priv->host_private_key);
-  g_return_if_fail (priv->host_random);
 
   if (error)
+    goto out;
+
+  if (!priv->host_private_key || !priv->host_random ||
+      !device_random || !claim || !mac ||
+      !claim->model_certificate || !claim->device_public_key || !claim->firmware_public_key ||
+      !claim->firmware_hash || !claim->model_signature || !claim->device_signature)
     {
-      if (device_random || claim || mac)
-        {
-          g_clear_pointer (&device_random, g_bytes_unref);
-          g_clear_pointer (&claim, fpi_sdcp_claim_free);
-          g_clear_pointer (&mac, g_bytes_unref);
-          fp_warn ("Driver provided SDCP Connect information but also reported error.");
-        }
-
-      fpi_device_open_complete (FP_DEVICE (self), error);
-      return;
-    }
-
-  if (!device_random || !claim || !mac ||
-      (!claim->model_certificate || !claim->device_public_key || !claim->firmware_public_key ||
-       !claim->firmware_hash || !claim->model_signature || !claim->device_signature))
-    {
-      fp_dbg ("Driver did not provide all required information to callback; returning error instead.");
-      g_clear_pointer (&device_random, g_bytes_unref);
-      g_clear_pointer (&claim, fpi_sdcp_claim_free);
-      g_clear_pointer (&mac, g_bytes_unref);
-
-      fpi_device_open_complete (FP_DEVICE (self),
-                                fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                          "Driver called connect complete with "
-                                                          "incomplete arguments"));
-      return;
+      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                        "Incomplete SDCP Connect information");
+      goto out;
     }
 
   /* Verify connect and store the application_secret */
@@ -488,12 +473,8 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
                                                 &error);
   if (!application_secret)
     {
-      fpi_device_open_complete (FP_DEVICE (self),
-                                fpi_device_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
-                                                          "SDCP Connect verification failed: %s",
-                                                          error->message));
-      g_clear_error (&error);
-      return;
+      g_prefix_error (&error, "SDCP Connect verification failed: ");
+      goto out;
     }
 
   fpi_sdcp_device_set_application_secret (self, application_secret);
@@ -509,12 +490,14 @@ fpi_sdcp_device_connect_complete (FpSdcpDevice *self,
                           claim->enroll_label :
                           FPI_SDCP_DEFAULT_LABEL_ENROLL;
 
-  /* Clear no longer needed private data */
+out:
+  /* Clear ephemeral host material on both success and failure. Input claim,
+   * random and MAC remain owned by the driver. */
   g_clear_pointer (&priv->host_private_key, g_bytes_unref);
   g_clear_pointer (&priv->host_public_key, g_bytes_unref);
   g_clear_pointer (&priv->host_random, g_bytes_unref);
 
-  fpi_device_open_complete (FP_DEVICE (self), NULL);
+  fpi_device_open_complete (FP_DEVICE (self), error);
 }
 
 /**
@@ -674,17 +657,21 @@ fpi_sdcp_device_enroll_commit (FpSdcpDevice *self,
 
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
-  g_return_if_fail (nonce != NULL);
 
   fpi_device_get_enroll_data (FP_DEVICE (self), &print);
   application_secret = fpi_sdcp_device_get_application_secret (self);
 
-  id = fpi_sdcp_generate_enrollment_id (application_secret, priv->enroll_label, nonce, &error);
+  if (!error && !nonce)
+    error = fpi_device_error_new (FP_DEVICE_ERROR_PROTO);
+  if (!error)
+    id = fpi_sdcp_generate_enrollment_id (application_secret, priv->enroll_label, nonce, &error);
   if (!id || error)
     {
-      fp_warn ("Could not generate SDCP enrollment ID");
-      fpi_device_enroll_complete (FP_DEVICE (self), NULL, error);
-      g_object_set (print, "fpi-data", NULL, NULL);
+      /* Finish only after the driver has aborted its device-side enrollment. */
+      g_clear_pointer (&id, g_bytes_unref);
+      g_clear_error (&priv->enroll_error);
+      priv->enroll_error = error;
+      cls->enroll_commit (self, NULL);
       return;
     }
 
@@ -711,11 +698,19 @@ void
 fpi_sdcp_device_enroll_commit_complete (FpSdcpDevice *self,
                                         GError       *error)
 {
+  FpSdcpDevicePrivate *priv = fp_sdcp_device_get_instance_private (self);
+
   g_autoptr(GBytes) id = NULL;
   FpPrint *print;
 
   g_return_if_fail (FP_IS_SDCP_DEVICE (self));
   g_return_if_fail (fpi_device_get_current_action (FP_DEVICE (self)) == FPI_DEVICE_ACTION_ENROLL);
+
+  if (priv->enroll_error)
+    {
+      g_clear_error (&error);
+      error = g_steal_pointer (&priv->enroll_error);
+    }
 
   if (error)
     {

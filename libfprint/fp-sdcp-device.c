@@ -90,6 +90,7 @@ fp_sdcp_device_finalize (GObject *object)
   g_clear_pointer (&priv->reconnect_random, g_bytes_unref);
   g_clear_pointer (&priv->identify_nonce, g_bytes_unref);
   g_clear_pointer (&priv->data, g_bytes_unref);
+  g_clear_error (&priv->enroll_error);
 
   G_OBJECT_CLASS (fp_sdcp_device_parent_class)->finalize (object);
 }

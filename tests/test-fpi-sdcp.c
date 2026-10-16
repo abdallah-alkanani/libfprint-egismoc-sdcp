@@ -31,6 +31,7 @@
 #include <openssl/bio.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 /*
  * Fixed host key material used for the deterministic key exchange test.
@@ -222,7 +223,6 @@ test_verify_connect (void)
   g_autoptr(GBytes) expected_application_secret = g_bytes_from_hex (application_secret_hex);
   g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
 
-  fpi_virtual_sdcp_ca_store_register_resource ();
 
   application_secret = fpi_sdcp_verify_connect (host_private_key,
                                                 host_random,
@@ -233,7 +233,6 @@ test_verify_connect (void)
                                                 FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
                                                 &error);
 
-  fpi_virtual_sdcp_ca_store_unregister_resource ();
 
   g_assert_no_error (error);
   g_assert_nonnull (application_secret);
@@ -644,20 +643,192 @@ test_verify_real_model_cert (void)
    * so we must skip the time check.
    */
   g_assert_true (verify_model_certificate (cert_bytes,
-                                           FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME,
+                                           FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME |
+                                           FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU,
                                            &error));
   g_assert_no_error (error);
+}
+
+static void
+test_require_biometric_connect (void)
+{
+  g_autoptr(GBytes) host_private_key = g_bytes_from_hex (host_private_key_hex);
+  g_autoptr(GBytes) host_random = g_bytes_from_hex (host_random_hex);
+  g_autoptr(GBytes) device_random = g_bytes_from_hex (device_random_hex);
+  g_autoptr(GBytes) mac = compute_connect_mac ();
+  g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
+  g_autoptr(GBytes) secret = NULL;
+  g_autoptr(GError) error = NULL;
+
+  /* This otherwise trusted, correctly signed claim lacks a biometric EKU. */
+  secret = fpi_sdcp_verify_connect (host_private_key, host_random, device_random,
+                                    claim, mac, fpi_virtual_sdcp_ca_store_get_resource (),
+                                    FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME |
+                                    FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU, &error);
+  g_assert_null (secret);
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
+  g_assert_nonnull (strstr (error->message, "biometric attestation"));
+}
+
+/* Test the purpose policy separately from signature/chain checking. The
+ * modified certificates are deliberately not re-signed; IGNORE_CERTIFICATES
+ * isolates EKU parsing. The real-certificate test covers the full chain. */
+static void
+test_model_certificate_purpose (gconstpointer data)
+{
+  const gchar *purpose = data;
+
+  g_autoptr(GBytes) bytes = g_bytes_from_hex (model_certificate_hex);
+  g_autoptr(GBytes) modified = NULL;
+  g_autoptr(GError) error = NULL;
+  const guint8 *ptr = g_bytes_get_data (bytes, NULL);
+  X509 *cert = d2i_X509 (NULL, &ptr, g_bytes_get_size (bytes));
+  guint8 *der = NULL;
+  int size;
+  gboolean accepted;
+
+  g_assert_nonnull (cert);
+  if (!g_str_equal (purpose, "missing"))
+    {
+      X509_EXTENSION *extension = X509V3_EXT_conf_nid (NULL, NULL, NID_ext_key_usage,
+                                                       (gchar *) purpose);
+      g_assert_nonnull (extension);
+      g_assert_cmpint (X509_add_ext (cert, extension, -1), ==, 1);
+      X509_EXTENSION_free (extension);
+    }
+  /* Refresh the cached TBSCertificate encoding after adding extensions. */
+  g_assert_cmpint (i2d_re_X509_tbs (cert, NULL), >, 0);
+  size = i2d_X509 (cert, &der);
+  g_assert_cmpint (size, >, 0);
+  modified = g_bytes_new (der, size);
+  OPENSSL_free (der);
+  X509_free (cert);
+
+  accepted = fpi_sdcp_verify_certificate (modified, NULL,
+                                          FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES |
+                                          FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU,
+                                          &error);
+  if (g_str_equal (purpose, "1.3.6.1.4.1.311.76.43.1"))
+    {
+      g_assert_true (accepted);
+      g_assert_no_error (error);
+    }
+  else
+    {
+      g_assert_false (accepted);
+      g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
+    }
+}
+
+/* Recompute the outer MAC after tampering so a rejected claim proves that
+ * attestation was checked, rather than merely detecting a stale claim MAC.
+ * A peer that chooses its own ECDH key can produce a valid outer MAC.
+ */
+static GBytes *
+claim_mac (FpiSdcpClaim *claim)
+{
+  g_autoptr(GBytes) secret = g_bytes_from_hex (application_secret_hex);
+  g_autoptr(GChecksum) checksum = g_checksum_new (G_CHECKSUM_SHA256);
+  g_autoptr(GHmac) hmac = g_hmac_new (G_CHECKSUM_SHA256,
+                                      g_bytes_get_data (secret, NULL),
+                                      g_bytes_get_size (secret));
+  GBytes *fields[] = { claim->model_certificate, claim->device_public_key,
+                       claim->firmware_public_key, claim->firmware_hash,
+                       claim->model_signature, claim->device_signature };
+  guint8 digest[FPI_SDCP_MAC_SIZE];
+  gsize length = sizeof (digest);
+
+  for (guint i = 0; i < G_N_ELEMENTS (fields); i++)
+    g_checksum_update (checksum, g_bytes_get_data (fields[i], NULL),
+                       g_bytes_get_size (fields[i]));
+  g_checksum_get_digest (checksum, digest, &length);
+  g_hmac_update (hmac, (const guchar *) "connect", sizeof ("connect"));
+  g_hmac_update (hmac, digest, length);
+  g_hmac_get_digest (hmac, digest, &length);
+  return g_bytes_new (digest, length);
+}
+
+static void
+test_reject_claim (gconstpointer data)
+{
+  const gchar *mutation = data;
+  gboolean validate_certificate = !g_str_has_suffix (mutation, "unvalidated");
+
+  g_autoptr(FpiSdcpClaim) claim = get_fake_sdcp_claim ();
+  g_autoptr(GBytes) host_private_key = g_bytes_from_hex (host_private_key_hex);
+  g_autoptr(GBytes) host_random = g_bytes_from_hex (host_random_hex);
+  g_autoptr(GBytes) device_random = g_bytes_from_hex (device_random_hex);
+  g_autoptr(GBytes) mac = NULL;
+  g_autoptr(GBytes) application_secret = NULL;
+  g_autoptr(GError) error = NULL;
+  GBytes **field;
+  gsize length;
+  g_autofree guint8 *bytes = NULL;
+
+  if (g_str_has_prefix (mutation, "model"))
+    field = &claim->model_signature;
+  else if (g_str_has_prefix (mutation, "device"))
+    field = &claim->device_signature;
+  else if (g_str_equal (mutation, "firmware-hash"))
+    field = &claim->firmware_hash;
+  else
+    field = &claim->model_certificate;
+
+  length = g_bytes_get_size (*field);
+  bytes = g_malloc0 (length + 1);
+  memcpy (bytes, g_bytes_get_data (*field, NULL), length);
+  if (g_str_has_suffix (mutation, "short"))
+    length--;
+  else if (g_str_has_suffix (mutation, "long"))
+    length++;
+  else
+    bytes[length - 1] ^= 1;
+  g_clear_pointer (field, g_bytes_unref);
+  *field = g_bytes_new (bytes, length);
+  mac = claim_mac (claim);
+
+  application_secret = fpi_sdcp_verify_connect (host_private_key, host_random,
+                                                device_random, claim, mac,
+                                                fpi_virtual_sdcp_ca_store_get_resource (),
+                                                FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME |
+                                                (validate_certificate ? 0 : FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES),
+                                                &error);
+  g_assert_nonnull (error);
+  g_assert_cmpuint (error->domain, ==, FP_DEVICE_ERROR);
+  g_assert_true (error->code == FP_DEVICE_ERROR_UNTRUSTED ||
+                 error->code == FP_DEVICE_ERROR_PROTO);
+  g_assert_null (application_secret);
+}
+
+static void
+test_reject_identify_replay (void)
+{
+  g_autoptr(GBytes) secret = g_bytes_from_hex (application_secret_hex);
+  g_autoptr(GBytes) nonce = g_bytes_from_hex (identify_nonce_hex);
+  g_autoptr(GBytes) id = compute_enrollment_id ();
+  g_autoptr(GBytes) mac = compute_identify_mac (id);
+  g_autoptr(GError) error = NULL;
+  guint8 changed_nonce[FPI_SDCP_NONCE_SIZE];
+
+  memcpy (changed_nonce, g_bytes_get_data (nonce, NULL), sizeof (changed_nonce));
+  changed_nonce[0] ^= 1;
+  g_clear_pointer (&nonce, g_bytes_unref);
+  nonce = g_bytes_new (changed_nonce, sizeof (changed_nonce));
+  g_assert_false (fpi_sdcp_verify_identify (secret, NULL, nonce, id, mac, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_UNTRUSTED);
 }
 
 int
 main (int argc, char *argv[])
 {
   g_test_init (&argc, &argv, NULL);
+  fpi_virtual_sdcp_ca_store_register_resource ();
 
   g_test_add_func ("/sdcp/generate_host_key", test_generate_host_key);
   g_test_add_func ("/sdcp/generate_random", test_generate_random);
   g_test_add_func ("/sdcp/key_derivation", test_sdcp_key_derivation);
   g_test_add_func ("/sdcp/verify_connect", test_verify_connect);
+  g_test_add_func ("/sdcp/require-biometric-connect", test_require_biometric_connect);
   g_test_add_func ("/sdcp/verify_reconnect", test_verify_reconnect);
   g_test_add_func ("/sdcp/verify_identify", test_verify_identify);
   g_test_add_func ("/sdcp/generate_enrollment_id", test_generate_enrollment_id);
@@ -665,6 +836,25 @@ main (int argc, char *argv[])
   g_test_add_func ("/sdcp/mac/wrong_mac", test_sdcp_mac_wrong_mac);
   g_test_add_func ("/sdcp/mac/wrong_data", test_sdcp_mac_wrong_data);
   g_test_add_func ("/sdcp/verify_model_cert/real_ms_signed", test_verify_real_model_cert);
+
+  const gchar *mutations[] = { "model-tampered", "device-tampered", "firmware-hash",
+                               "model-short", "model-long", "device-short",
+                               "device-long", "certificate-tampered", "certificate-long",
+                               "model-unvalidated", "device-unvalidated" };
+  for (guint i = 0; i < G_N_ELEMENTS (mutations); i++)
+    {
+      g_autofree gchar *path = g_strconcat ("/sdcp/reject-claim/", mutations[i], NULL);
+      g_test_add_data_func (path, mutations[i], test_reject_claim);
+    }
+  g_test_add_func ("/sdcp/reject-identify-replay", test_reject_identify_replay);
+
+  const gchar *purposes[] = { "missing", "serverAuth", "anyExtendedKeyUsage",
+                              "1.3.6.1.4.1.311.76.43.1" };
+  for (guint i = 0; i < G_N_ELEMENTS (purposes); i++)
+    {
+      g_autofree gchar *path = g_strconcat ("/sdcp/certificate-purpose/", purposes[i], NULL);
+      g_test_add_data_func (path, purposes[i], test_model_certificate_purpose);
+    }
 
   return g_test_run ();
 }

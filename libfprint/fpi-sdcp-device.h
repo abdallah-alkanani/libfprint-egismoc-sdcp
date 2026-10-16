@@ -58,9 +58,8 @@
  * @FPI_DEVICE_SDCP_VERIFICATION_DEFAULT: No flags. Perform all verifications.
  * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES: Skip validating the
  *   device's #FpiSdcpClaim.model_certificate against the SDCP CA store.
- *   SDCP CA store.
- *   It determines if the model certificate (cert_m) should be parsed and
- *   its trust chain validated as issued from Microsoft's well-known issuers.
+ *   Signature verification remains independent: the certificate is still
+ *   parsed to obtain the model public key unless signatures are also ignored.
  * @FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES: Skip validating the
  *   #FpiSdcpClaim.model_signature and #FpiSdcpClaim.device_signature.
  *   It determines if the model signature (s_m) and device signature (s_d)
@@ -72,6 +71,9 @@
  *   issues to be ignored.
  * @FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN: Allow
  *   validation of the certificate even if the trust chain is incomplete.
+ * @FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU: Require the biometric
+ *   extended key usage found in Microsoft-issued Windows Hello model
+ *   certificates, and enforce any EKU restrictions in the verified chain.
  *
  * Bitfield of SDCP verification flags for a device.
  */
@@ -83,6 +85,7 @@ typedef enum {
   FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NO_CHECK_TIME = 1 << 8,
   FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_NON_X509_STRICT = 1 << 9,
   FPI_DEVICE_SDCP_VERIFICATION_CERTIFICATE_ALLOW_PARTIAL_CHAIN = 1 << 10,
+  FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU = 1 << 11,
 } FpiDeviceSdcpVerificationFlags;
 
 /**

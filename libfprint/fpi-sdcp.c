@@ -37,6 +37,7 @@
 #include <openssl/pem.h>
 #include <openssl/rand.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #include <stdarg.h>
 
 #define SDCP_KEY_AGREEMENT_SIZE 32
@@ -60,6 +61,8 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC (BIO, BIO_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (ECDSA_SIG, ECDSA_SIG_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (EC_GROUP, EC_GROUP_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (EC_POINT, EC_POINT_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (ASN1_OBJECT, ASN1_OBJECT_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (EXTENDED_KEY_USAGE, EXTENDED_KEY_USAGE_free)
 
 /******************************************************************************/
 
@@ -451,6 +454,42 @@ fpi_sdcp_get_ca_store (GResource *additional_ca_store,
   return default_ca_store;
 }
 
+/* Present in the real Microsoft-issued model certificates in the Egis replay
+ * and tests/sdcp-hello-model-cert.pem. Drivers opt into this purpose policy. */
+static gboolean
+fpi_sdcp_check_biometric_eku (X509    *cert,
+                              gboolean leaf,
+                              GError **error)
+{
+  g_autoptr(ASN1_OBJECT) biometric_oid = OBJ_txt2obj ("1.3.6.1.4.1.311.76.43.1", 1);
+  g_autoptr(EXTENDED_KEY_USAGE) usage = NULL;
+  int critical = -1;
+
+  usage = X509_get_ext_d2i (cert, NID_ext_key_usage, &critical, NULL);
+
+  /* A CA without an EKU is unrestricted. A model certificate must explicitly
+   * assert the biometric purpose and must not itself be a CA. */
+  if (!leaf && !usage && critical == -1)
+    return TRUE;
+
+  if (biometric_oid && usage && (!leaf || X509_check_ca (cert) == 0))
+    {
+      for (int i = 0; i < sk_ASN1_OBJECT_num (usage); i++)
+        {
+          ASN1_OBJECT *oid = sk_ASN1_OBJECT_value (usage, i);
+
+          if (OBJ_cmp (oid, biometric_oid) == 0 ||
+              (!leaf && OBJ_obj2nid (oid) == NID_anyExtendedKeyUsage))
+            return TRUE;
+        }
+    }
+
+  g_propagate_error (error,
+                     fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
+                                             "Certificate is not authorized for biometric attestation"));
+  return FALSE;
+}
+
 static X509 *
 fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificate,
                                   GResource                     *additional_ca_store,
@@ -460,14 +499,16 @@ fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificat
   g_autoptr(X509_STORE) sdcp_ca_store = NULL;
   g_autoptr(X509_STORE_CTX) ctx = NULL;
   const guint8 *cert_ptr;
+  const guint8 *cert_start;
   g_autoptr(X509) cert = NULL;
   gsize cert_len;
 
   g_return_val_if_fail (x509_certificate != NULL, NULL);
 
   cert_ptr = g_bytes_get_data (x509_certificate, &cert_len);
+  cert_start = cert_ptr;
   cert = d2i_X509 (NULL, &cert_ptr, cert_len);
-  if (!cert)
+  if (!cert || cert_ptr != cert_start + cert_len)
     {
       g_propagate_error (error,
                          fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_PROTO,
@@ -476,6 +517,15 @@ fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificat
     }
 
   print_certificate (cert);
+
+  if ((verification_flags & FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU) &&
+      !fpi_sdcp_check_biometric_eku (cert, TRUE, error))
+    return NULL;
+
+  /* Skipping trust-chain validation must not skip parsing the public key
+   * needed for the independently controlled attestation signature checks. */
+  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES)
+    return g_steal_pointer (&cert);
 
   sdcp_ca_store = fpi_sdcp_get_ca_store (additional_ca_store, error);
   if (!sdcp_ca_store)
@@ -534,13 +584,22 @@ fpi_sdcp_verify_x509_certificate (GBytes                        *x509_certificat
         }
     }
 
-  if (!X509_verify_cert (ctx))
+  if (X509_verify_cert (ctx) != 1)
     {
       g_propagate_error (error,
                          fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_UNTRUSTED,
                                                  "OpenSSL error verifying model certificate: %s",
                                                  X509_verify_cert_error_string (X509_STORE_CTX_get_error (ctx))));
       return NULL;
+    }
+
+  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU)
+    {
+      STACK_OF (X509) * chain = X509_STORE_CTX_get0_chain (ctx);
+
+      for (int i = 1; i < sk_X509_num (chain); i++)
+        if (!fpi_sdcp_check_biometric_eku (sk_X509_value (chain, i), FALSE, error))
+          return NULL;
     }
 
   return g_steal_pointer (&cert);
@@ -733,16 +792,11 @@ fpi_sdcp_get_private_key (EVP_PKEY *pkey,
       return NULL;
     }
 
-  priv_len = BN_num_bytes (priv_bn);
-  if (priv_len != FPI_SDCP_PRIVATE_KEY_SIZE)
-    {
-      g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                                        "Unexpected private key size"));
-      return NULL;
-    }
-
+  /* A valid P-256 scalar may have leading zero bytes. Preserve the fixed
+   * wire width instead of sporadically rejecting such generated keys. */
+  priv_len = FPI_SDCP_PRIVATE_KEY_SIZE;
   priv = g_malloc0 (priv_len);
-  if (!BN_bn2bin (priv_bn, priv))
+  if (BN_bn2binpad (priv_bn, priv, priv_len) != priv_len)
     {
       g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
                                                         "OpenSSL error exporting private key bytes"));
@@ -856,7 +910,12 @@ fpi_sdcp_get_private_pkey (GBytes  *private_key,
                                                         "OpenSSL error initializing key import"));
       return NULL;
     }
-  EVP_PKEY_fromdata (ctx, &key, EVP_PKEY_KEYPAIR, params);
+  if (EVP_PKEY_fromdata (ctx, &key, EVP_PKEY_KEYPAIR, params) != 1)
+    {
+      g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                        "OpenSSL error importing private key"));
+      return NULL;
+    }
 
   return g_steal_pointer (&key);
 }
@@ -979,6 +1038,12 @@ fpi_sdcp_generate_host_key (GBytes **private_key,
   g_assert (public_key != NULL);
 
   key = EVP_EC_gen ("P-256");
+  if (!key)
+    {
+      g_propagate_error (error, fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                        "OpenSSL error generating host key"));
+      return FALSE;
+    }
 
   if (!(local_private_key = fpi_sdcp_get_private_key (key, error)))
     return FALSE;
@@ -1009,7 +1074,7 @@ fpi_sdcp_generate_random (GError **error)
                                              FPI_SDCP_RANDOM_SIZE);
     }
 
-  if (!RAND_bytes (random, FPI_SDCP_RANDOM_SIZE))
+  if (RAND_bytes (random, FPI_SDCP_RANDOM_SIZE) != 1)
     {
       g_propagate_error (error,
                          fpi_sdcp_error_new_msg (FP_DEVICE_ERROR_GENERAL,
@@ -1058,9 +1123,6 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   if (!key_agreement)
     return NULL;
 
-  fp_dbg ("key_agreement:");
-  fp_dbg_hex_dump_gbytes (key_agreement);
-
   /* SDCP Connect: 5.ii. Derive master secret */
 
   master_secret = fpi_sdcp_kdf (key_agreement,
@@ -1071,9 +1133,6 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
                                 FPI_SDCP_MASTER_SECRET_SIZE, error);
   if (!master_secret)
     return NULL;
-
-  fp_dbg ("master_secret:");
-  fp_dbg_hex_dump_gbytes (master_secret);
 
   /* SDCP Connect: 5.iii. Derive MAC secret and symmetric key */
 
@@ -1086,9 +1145,6 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   if (!application_keys)
     return NULL;
 
-  fp_dbg ("application_keys:");
-  fp_dbg_hex_dump_gbytes (application_keys);
-
   /* slice first half of application_keys as application_secret */
   g_assert (g_bytes_get_size (application_keys) >= FPI_SDCP_APPLICATION_SECRET_SIZE);
   app_secret_buf = g_malloc0 (FPI_SDCP_APPLICATION_SECRET_SIZE);
@@ -1098,9 +1154,6 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
 
   out_app_secret = fpi_sdcp_bytes_new_secure_take (g_steal_pointer (&app_secret_buf),
                                                    FPI_SDCP_APPLICATION_SECRET_SIZE);
-
-  fp_dbg ("application_secret:");
-  fp_dbg_hex_dump_gbytes (out_app_secret);
 
   /* SDCP Connect: 5.iv. Validate the MAC over H(claim) */
 
@@ -1141,9 +1194,11 @@ fpi_sdcp_verify_connect (GBytes                        *host_private_key,
   /* SDCP Connect: 5.v. Unpack the claim (SKIP; already done) */
   /* SDCP Connect: 5.vi. Verify the claim */
 
-  if (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES)
+  if ((verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_CERTIFICATES) &&
+      (verification_flags & FPI_DEVICE_SDCP_VERIFICATION_IGNORE_SIGNATURES) &&
+      !(verification_flags & FPI_DEVICE_SDCP_VERIFICATION_REQUIRE_BIOMETRIC_EKU))
     {
-      fp_dbg ("SDCP model certificate verification ignored");
+      fp_dbg ("SDCP certificate and signature verification ignored");
       return g_steal_pointer (&out_app_secret);
     }
 

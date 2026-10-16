@@ -218,6 +218,12 @@ dev_enroll_commit (FpSdcpDevice *sdcp_device, GBytes *id)
 
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 
+  if (!id)
+    {
+      fpi_sdcp_device_enroll_commit_complete (sdcp_device, NULL);
+      return;
+    }
+
   print_id = g_bytes_new (g_bytes_get_data (id, NULL), g_bytes_get_size (id));
 
   /*
@@ -267,6 +273,13 @@ dev_enroll (FpSdcpDevice *sdcp_device)
   g_autoptr(GError) error = NULL;
   g_autoptr(GBytes) nonce = NULL;
   FpPrint *print;
+
+  if (g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_ENROLL_FAILURE"), "1") == 0)
+    {
+      fpi_sdcp_device_enroll_commit (sdcp_device, NULL,
+                                     fpi_device_error_new (FP_DEVICE_ERROR_PROTO));
+      return;
+    }
 
   fpi_device_get_enroll_data (device, &print);
 
@@ -504,6 +517,16 @@ dev_connect (FpSdcpDevice *sdcp_device)
 
   write_event (self, "connect\n");
 
+  if (g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_CONNECT_FAILURE"), "incomplete-claim") == 0)
+    {
+      device_random = bytes_from_hex (device_random_hex);
+      connect_mac = g_bytes_ref (device_random);
+      claim = fpi_sdcp_claim_new ();
+      fpi_sdcp_device_connect_complete (sdcp_device, device_random, claim, connect_mac, NULL);
+      return;
+    }
+
+
   fpi_sdcp_device_get_connect_data (sdcp_device, &host_random, &host_public_key);
 
   g_assert (host_random);
@@ -597,6 +620,14 @@ static void
 dev_open (FpSdcpDevice *sdcp_device)
 {
   void (*old_reconnect)(FpSdcpDevice *sdcp_device) = dev_reconnect;
+
+  if (g_strcmp0 (g_getenv ("FP_VIRTUAL_SDCP_CONNECT_FAILURE"), "before-keys") == 0)
+    {
+      fpi_sdcp_device_connect_complete (sdcp_device, NULL, NULL, NULL,
+                                        fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+      return;
+    }
+
 
   fp_dbg ("Virtual SDCP device: %s()", G_STRFUNC);
 

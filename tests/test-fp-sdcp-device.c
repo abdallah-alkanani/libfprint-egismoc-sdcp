@@ -80,6 +80,54 @@ sdcp_context_new (void)
 #endif
 }
 
+#ifndef TEST_TOD_DRIVER
+/* These fault hooks are provided by the current virtual driver only. */
+static void
+test_sdcp_device_enroll_failure_retry (void)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+  g_autoptr(FpPrint) template = g_object_ref_sink (fp_print_new (tctx->device));
+  g_autoptr(FpPrint) enrolled = NULL;
+  g_autoptr(GPtrArray) prints = NULL;
+
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+  g_setenv ("FP_VIRTUAL_SDCP_ENROLL_FAILURE", "1", TRUE);
+  enrolled = fp_device_enroll_sync (tctx->device, template, NULL, NULL, NULL, &error);
+  g_assert_null (enrolled);
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO);
+  g_clear_error (&error);
+  g_unsetenv ("FP_VIRTUAL_SDCP_ENROLL_FAILURE");
+  prints = fp_device_list_prints_sync (tctx->device, NULL, &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (prints->len, ==, 0);
+  enrolled = fp_device_enroll_sync (tctx->device, template, NULL, NULL, NULL, &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (enrolled);
+}
+
+static void
+test_sdcp_device_connect_failure_retry (gconstpointer data)
+{
+  g_autoptr(FptContext) tctx = sdcp_context_new ();
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GBytes) secret = NULL;
+
+  g_setenv ("FP_VIRTUAL_SDCP_CONNECT_FAILURE", data, TRUE);
+  g_assert_false (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL);
+  g_assert_false (fp_device_is_open (tctx->device));
+  g_object_get (tctx->device, "sdcp-data", &secret, NULL);
+  g_assert_null (secret);
+  g_unsetenv ("FP_VIRTUAL_SDCP_CONNECT_FAILURE");
+  g_clear_error (&error);
+
+  g_assert_true (fp_device_open_sync (tctx->device, NULL, &error));
+  g_assert_no_error (error);
+}
+#endif
+
 static FpPrint *
 make_enroll_template (FpDevice *device)
 {
@@ -657,6 +705,14 @@ main (int argc, char *argv[])
                    test_sdcp_device_identify_fails_wrong_label);
   g_test_add_func ("/sdcp-device/clear_storage",
                    test_sdcp_device_clear_storage);
+
+#ifndef TEST_TOD_DRIVER
+  g_test_add_func ("/sdcp-device/enroll/fails/abort_retry", test_sdcp_device_enroll_failure_retry);
+  g_test_add_data_func ("/sdcp-device/open/fails/before_keys_retry", "before-keys",
+                        test_sdcp_device_connect_failure_retry);
+  g_test_add_data_func ("/sdcp-device/open/fails/incomplete_claim_retry", "incomplete-claim",
+                        test_sdcp_device_connect_failure_retry);
+#endif
 
   return g_test_run ();
 }

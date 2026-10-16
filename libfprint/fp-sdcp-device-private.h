@@ -30,6 +30,7 @@ typedef struct
   GBytes      *reconnect_random;
   GBytes      *identify_nonce;
   GBytes      *data;
+  GError      *enroll_error;
 
   const gchar *reconnect_label;
   const gchar *enroll_label;
