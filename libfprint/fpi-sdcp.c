@@ -631,6 +631,7 @@ fpi_sdcp_kdf (GBytes      *key,
   g_autoptr(EVP_KDF) kdf = NULL;
   g_autoptr(EVP_KDF_CTX) kdf_ctx = NULL;
   g_autofree guint8 *secret = NULL;
+  g_autoptr(GByteArray) context = g_byte_array_new ();
   OSSL_PARAM params[8];
   int i = 0;
 
@@ -650,15 +651,23 @@ fpi_sdcp_kdf (GBytes      *key,
                                                    (void *) label,
                                                    strlen (label));
 
+  /* The KBKDF context is context_a || context_b. Pass it as one INFO
+   * parameter: OpenSSL 3.0 and 3.1 read only the first INFO, while 3.2+
+   * concatenate repeated ones. */
   if (context_a)
-    params[i++] = OSSL_PARAM_construct_octet_string (OSSL_KDF_PARAM_INFO,
-                                                     (void *) (g_bytes_get_data (context_a, NULL)),
-                                                     g_bytes_get_size (context_a));
+    g_byte_array_append (context,
+                         g_bytes_get_data (context_a, NULL),
+                         g_bytes_get_size (context_a));
 
   if (context_b)
+    g_byte_array_append (context,
+                         g_bytes_get_data (context_b, NULL),
+                         g_bytes_get_size (context_b));
+
+  if (context->len > 0)
     params[i++] = OSSL_PARAM_construct_octet_string (OSSL_KDF_PARAM_INFO,
-                                                     (void *) (g_bytes_get_data (context_b, NULL)),
-                                                     g_bytes_get_size (context_b));
+                                                     context->data,
+                                                     context->len);
 
   params[i++] = OSSL_PARAM_construct_end ();
 
